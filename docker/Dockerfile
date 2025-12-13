@@ -22,8 +22,8 @@ RUN mkdir -p crates/signal-bot/src/commands && \
     mkdir -p crates/dstack-client/src && echo "pub fn dummy() {}" > crates/dstack-client/src/lib.rs && \
     mkdir -p crates/signal-client/src && echo "pub fn dummy() {}" > crates/signal-client/src/lib.rs
 
-# Build dependencies only
-RUN cargo build --release --target x86_64-unknown-linux-musl 2>/dev/null || true
+# Build dependencies only (ignore errors from dummy files)
+RUN cargo build --release 2>/dev/null || true
 
 # Copy actual source
 COPY crates crates
@@ -32,18 +32,19 @@ COPY crates crates
 RUN find crates -name "*.rs" -exec touch {} \;
 
 # Build release binary
-RUN cargo build --release --target x86_64-unknown-linux-musl --bin signal-bot
+RUN cargo build --release --bin signal-bot
 
 # Runtime stage
-FROM scratch
+FROM alpine:3.21
 
-# Copy CA certificates for HTTPS
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+# Install CA certificates for HTTPS
+RUN apk add --no-cache ca-certificates
 
 # Copy binary
-COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/signal-bot /signal-bot
+COPY --from=builder /app/target/release/signal-bot /signal-bot
 
-# Non-root user (UID 1000)
-USER 1000
+# Non-root user
+RUN adduser -D -u 1000 appuser
+USER appuser
 
 ENTRYPOINT ["/signal-bot"]
