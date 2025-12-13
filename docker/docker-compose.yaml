@@ -5,8 +5,8 @@ services:
     image: bbernhard/signal-cli-rest-api:latest
     container_name: signal-api
     environment:
-      - MODE=json-rpc
-      - JSON_RPC_TRUST_NEW_IDENTITIES=on-first-use
+      - MODE=normal
+      - AUTO_RECEIVE_SCHEDULE=
       - LOG_LEVEL=info
     volumes:
       - /var/run/dstack.sock:/var/run/dstack.sock:ro

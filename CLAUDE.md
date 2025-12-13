@@ -31,19 +31,51 @@ This bot runs in an Intel TDX Trusted Execution Environment with the following s
 - Simpler architecture = smaller attack surface
 - ORAM unnecessary since Signal/NEAR AI network traffic already leaks comparable metadata
 
+### Signal CLI Must Run in TEE (Critical)
+
+Signal's E2E encryption terminates at the Signal CLI - that's where messages are decrypted.
+**Both Signal CLI and the bot must run in the same TEE enclave.**
+
+If Signal CLI runs outside the TEE:
+```
+User -> Signal servers -> [Signal CLI decrypts] -> plaintext -> TEE Bot
+                              ^
+                              |
+                     Operator can read here (BROKEN!)
+```
+
+The operator could read decrypted messages from Signal CLI before they reach the bot -
+completely breaking the privacy guarantee.
+
+Correct architecture:
+```
+User -> Signal servers -> [TEE: Signal CLI decrypts -> Bot -> NEAR AI]
+                          |_________________________________________|
+                                   All in protected memory
+```
+
+The docker-compose deploys both `signal-api` and `signal-bot` containers in the same
+Dstack TEE environment, ensuring plaintext only exists in protected memory.
+
 ### Data Flow Security
 
 ```
-User -> Signal (E2E encrypted) -> Signal CLI -> TEE Bot -> NEAR AI (GPU TEE)
-                                       |
-                                 [In-memory only]
-                                 [TEE-protected]
+[TEE Boundary]
++------------------------------------------------------------------+
+|  Signal CLI (decrypts) -> Bot (processes) -> NEAR AI request     |
+|                              |                                    |
+|                        [In-memory only]                          |
++------------------------------------------------------------------+
+                               |
+                               v
+                         NEAR AI (GPU TEE)
 ```
 
-- Messages encrypted by Signal until they reach the TEE
+- Signal E2E encryption terminates inside TEE
 - Conversation history kept only in TEE memory
 - Requests to NEAR AI go to their GPU TEE (attestable)
 - No plaintext persistence anywhere
+- Operator cannot access decrypted messages
 
 ### Metadata Leakage
 
