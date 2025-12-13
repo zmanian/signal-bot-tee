@@ -2,7 +2,9 @@ version: "3.8"
 
 services:
   signal-api:
-    image: bbernhard/signal-cli-rest-api:latest
+    # Pinned to specific digest for TEE attestation integrity
+    # To update: docker pull bbernhard/signal-cli-rest-api:latest && docker inspect --format='{{index .RepoDigests 0}}'
+    image: bbernhard/signal-cli-rest-api@sha256:04ee57f9819a90c89fbee46f74e080a032f5f05decf6e4b4a4e1f45d050ed9c8
     container_name: signal-api
     environment:
       - MODE=normal
