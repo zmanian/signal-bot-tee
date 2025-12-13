@@ -57,6 +57,82 @@ User -> Signal servers -> [TEE: Signal CLI decrypts -> Bot -> NEAR AI]
 The docker-compose deploys both `signal-api` and `signal-bot` containers in the same
 Dstack TEE environment, ensuring plaintext only exists in protected memory.
 
+### User Verification Process
+
+Users can verify the bot is running securely in a TEE. This is critical - without verification,
+you're trusting the operator's claim rather than cryptographic proof.
+
+#### Step 1: Get Attestation
+
+Send `!verify` to the bot. You'll receive:
+- **Compose Hash**: Hash of the docker-compose.yaml running in the TEE
+- **App ID**: Unique identifier for this TEE instance
+- **Verification URL**: Link to Phala's attestation portal
+
+#### Step 2: Verify the Compose Hash
+
+The compose hash proves which exact containers are running. To verify:
+
+1. Get the expected docker-compose.yaml from this repository
+2. The Dstack attestation portal shows which compose hash is running
+3. Verify they match
+
+**Why this matters**: If an operator modified docker-compose.yaml (e.g., to run signal-api
+outside the TEE), the compose hash would be different.
+
+#### Step 3: Verify Image Pinning
+
+Check that docker-compose.yaml pins signal-api to a specific digest, not `:latest`:
+
+```yaml
+# GOOD - Immutable, covered by compose_hash
+image: bbernhard/signal-cli-rest-api@sha256:04ee57f9...
+
+# BAD - Can change without changing compose_hash
+image: bbernhard/signal-cli-rest-api:latest
+```
+
+The current pinned digest is in `docker/docker-compose.yaml`. You can verify this image
+is the official one:
+
+```bash
+docker pull bbernhard/signal-cli-rest-api:latest
+docker inspect --format='{{index .RepoDigests 0}}' bbernhard/signal-cli-rest-api:latest
+# Should match the digest in docker-compose.yaml
+```
+
+#### Step 4: Verify on Phala Portal
+
+Visit https://proof.phala.network and:
+1. Enter the App ID from `!verify`
+2. Confirm the TEE type is Intel TDX
+3. Confirm the compose hash matches Step 2
+4. Review the full attestation quote
+
+#### What Attestation Proves
+
+| Property | Verified By |
+|----------|-------------|
+| Code is running in Intel TDX | TDX hardware quote |
+| Exact docker-compose.yaml | Compose hash in attestation |
+| Signal CLI image version | Image digest in pinned compose |
+| Memory is encrypted | TDX hardware guarantee |
+
+#### What Attestation Does NOT Prove
+
+- That the Signal CLI image itself is trustworthy (you trust bbernhard's image)
+- Network-level metadata (timing, message sizes) is still visible to operator
+- That NEAR AI is running in a TEE (verify separately at https://near.ai/verify)
+
+#### Trust Summary
+
+After verification, you trust:
+1. **Intel TDX hardware** - CPU encrypts TEE memory
+2. **Dstack/Phala** - Attestation infrastructure
+3. **This repository's docker-compose.yaml** - Defines what runs in TEE
+4. **bbernhard/signal-cli-rest-api** - The Signal CLI image
+5. **NEAR AI** - Their GPU TEE for inference
+
 ### Data Flow Security
 
 ```
