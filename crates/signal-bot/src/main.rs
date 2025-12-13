@@ -85,7 +85,7 @@ async fn main() -> AppResult<()> {
             conversations.clone(),
             config.bot.system_prompt.clone(),
         )),
-        Box::new(VerifyHandler::new(near_ai.clone(), dstack.clone())),
+        Box::new(VerifyHandler::new(dstack.clone())),
         Box::new(ClearHandler::new(conversations.clone())),
         Box::new(HelpHandler::new()),
         Box::new(ModelsHandler::new(near_ai.clone())),

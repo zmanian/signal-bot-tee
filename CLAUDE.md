@@ -62,12 +62,39 @@ Dstack TEE environment, ensuring plaintext only exists in protected memory.
 Users can verify the bot is running securely in a TEE. This is critical - without verification,
 you're trusting the operator's claim rather than cryptographic proof.
 
-#### Step 1: Get Attestation
+#### Step 1: Get Attestation with Challenge
 
-Send `!verify` to the bot. You'll receive:
+Send `!verify <challenge>` to the bot, where `<challenge>` is any string you choose (like a random nonce or timestamp). This challenge proves the attestation was generated fresh for you, not replayed.
+
+**Example**: `!verify my-random-nonce-12345`
+
+**Challenge Handling**:
+- If your challenge is **≤64 bytes**: It's embedded directly in the TDX quote's `report_data` field
+- If your challenge is **>64 bytes**: It's hashed with SHA-256 first, then the hash is embedded
+
+**Bot Response Includes**:
+- **Your challenge**: Echo of what you sent
+- **Whether it was hashed**: Indicates if SHA-256 was applied (for challenges >64 bytes)
+- **Report data (hex)**: The exact data embedded in the TDX quote (your challenge or its hash)
 - **Compose Hash**: Hash of the docker-compose.yaml running in the TEE
 - **App ID**: Unique identifier for this TEE instance
-- **Verification URL**: Link to Phala's attestation portal
+- **TDX Quote (base64)**: The full hardware attestation quote
+- **Verification Instructions**: Step-by-step guide to verify the quote
+
+**Verifying Your Challenge**:
+1. If your challenge was ≤64 bytes, convert it to hex and verify it matches the `report_data`
+2. If your challenge was >64 bytes, hash it with SHA-256 and verify the hash matches `report_data`
+3. This proves the attestation was generated in real-time for your specific request
+
+**Example verification** (for challenge "test"):
+```bash
+# Your challenge in hex
+echo -n "test" | xxd -p
+# Output: 74657374
+
+# Verify this appears at the start of report_data in the quote
+# The bot shows: report_data = 74657374000000... (padded to 64 bytes)
+```
 
 #### Step 2: Verify the Compose Hash
 
