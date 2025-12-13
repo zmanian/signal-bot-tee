@@ -20,10 +20,6 @@ impl ClearHandler {
 
 #[async_trait]
 impl CommandHandler for ClearHandler {
-    fn name(&self) -> &str {
-        "clear"
-    }
-
     fn trigger(&self) -> Option<&str> {
         Some("!clear")
     }

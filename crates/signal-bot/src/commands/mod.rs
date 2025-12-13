@@ -19,9 +19,6 @@ use signal_client::BotMessage;
 /// Command handler trait.
 #[async_trait]
 pub trait CommandHandler: Send + Sync {
-    /// Command name (e.g., "help", "clear").
-    fn name(&self) -> &str;
-
     /// Command trigger (e.g., "!help").
     fn trigger(&self) -> Option<&str> {
         None

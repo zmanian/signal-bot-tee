@@ -21,10 +21,6 @@ impl Default for HelpHandler {
 
 #[async_trait]
 impl CommandHandler for HelpHandler {
-    fn name(&self) -> &str {
-        "help"
-    }
-
     fn trigger(&self) -> Option<&str> {
         Some("!help")
     }

@@ -1647,7 +1647,6 @@ dependencies = [
  "near-ai-client",
  "serde",
  "serde_json",
- "sha2",
  "signal-client",
  "thiserror",
  "tokio",

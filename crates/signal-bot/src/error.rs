@@ -19,9 +19,6 @@ pub enum AppError {
 
     #[error("Dstack error: {0}")]
     Dstack(#[from] dstack_client::DstackError),
-
-    #[error("Internal error: {0}")]
-    Internal(String),
 }
 
 /// Result type alias for application errors.

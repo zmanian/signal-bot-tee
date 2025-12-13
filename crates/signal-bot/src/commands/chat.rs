@@ -31,10 +31,6 @@ impl ChatHandler {
 
 #[async_trait]
 impl CommandHandler for ChatHandler {
-    fn name(&self) -> &str {
-        "chat"
-    }
-
     fn is_default(&self) -> bool {
         true
     }

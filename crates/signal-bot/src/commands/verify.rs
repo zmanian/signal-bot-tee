@@ -5,7 +5,6 @@ use crate::error::AppResult;
 use async_trait::async_trait;
 use dstack_client::DstackClient;
 use near_ai_client::NearAiClient;
-use sha2::{Digest, Sha256};
 use signal_client::BotMessage;
 use std::sync::Arc;
 use tracing::info;
@@ -20,7 +19,7 @@ impl VerifyHandler {
         Self { near_ai, dstack }
     }
 
-    async fn get_proxy_info(&self, challenge: &[u8]) -> ProxyInfo {
+    async fn get_proxy_info(&self) -> ProxyInfo {
         if !self.dstack.is_in_tee().await {
             return ProxyInfo {
                 available: false,
@@ -30,16 +29,12 @@ impl VerifyHandler {
         }
 
         match self.dstack.get_app_info().await {
-            Ok(info) => {
-                let quote_ok = self.dstack.get_quote(challenge).await.is_ok();
-                ProxyInfo {
-                    available: true,
-                    compose_hash: info.compose_hash,
-                    app_id: info.app_id,
-                    quote_generated: quote_ok,
-                    reason: None,
-                }
-            }
+            Ok(info) => ProxyInfo {
+                available: true,
+                compose_hash: info.compose_hash,
+                app_id: info.app_id,
+                reason: None,
+            },
             Err(e) => ProxyInfo {
                 available: false,
                 reason: Some(e.to_string()),
@@ -114,7 +109,6 @@ struct ProxyInfo {
     available: bool,
     compose_hash: Option<String>,
     app_id: Option<String>,
-    quote_generated: bool,
     reason: Option<String>,
 }
 
@@ -126,10 +120,6 @@ struct NearInfo {
 
 #[async_trait]
 impl CommandHandler for VerifyHandler {
-    fn name(&self) -> &str {
-        "verify"
-    }
-
     fn trigger(&self) -> Option<&str> {
         Some("!verify")
     }
@@ -137,13 +127,7 @@ impl CommandHandler for VerifyHandler {
     async fn execute(&self, message: &BotMessage) -> AppResult<String> {
         info!("Attestation requested by {}", message.source);
 
-        // Generate challenge
-        let mut hasher = Sha256::new();
-        hasher.update(message.timestamp.to_string().as_bytes());
-        hasher.update(message.source.as_bytes());
-        let challenge = hasher.finalize();
-
-        let proxy = self.get_proxy_info(&challenge).await;
+        let proxy = self.get_proxy_info().await;
         let near = self.get_near_info().await;
 
         Ok(self.format_response(proxy, near))

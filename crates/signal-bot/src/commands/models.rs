@@ -20,10 +20,6 @@ impl ModelsHandler {
 
 #[async_trait]
 impl CommandHandler for ModelsHandler {
-    fn name(&self) -> &str {
-        "models"
-    }
-
     fn trigger(&self) -> Option<&str> {
         Some("!models")
     }
