@@ -1,0 +1,35 @@
+[package]
+name = "signal-bot"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "signal-bot"
+path = "src/main.rs"
+
+[dependencies]
+# Workspace crates
+near-ai-client = { path = "../near-ai-client" }
+conversation-store = { path = "../conversation-store" }
+dstack-client = { path = "../dstack-client" }
+signal-client = { path = "../signal-client" }
+
+# Workspace dependencies
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+config.workspace = true
+dotenvy.workspace = true
+chrono.workspace = true
+humantime-serde.workspace = true
+async-trait.workspace = true
+tokio-stream.workspace = true
+sha2.workspace = true
+
+[dev-dependencies]
+tokio-test.workspace = true
+mockall.workspace = true

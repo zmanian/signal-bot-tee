@@ -1,0 +1,52 @@
+version: "3.8"
+
+services:
+  signal-api:
+    image: bbernhard/signal-cli-rest-api:latest
+    container_name: signal-api
+    environment:
+      - MODE=json-rpc
+      - JSON_RPC_TRUST_NEW_IDENTITIES=on-first-use
+      - LOG_LEVEL=info
+    volumes:
+      - /var/run/dstack.sock:/var/run/dstack.sock:ro
+      - signal-config:/home/.local/share/signal-cli
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  signal-bot:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: signal-bot
+    environment:
+      - SIGNAL__SERVICE_URL=http://signal-api:8080
+      - SIGNAL__PHONE_NUMBER=${SIGNAL_PHONE}
+      - NEAR_AI__API_KEY=${NEAR_AI_API_KEY}
+      - NEAR_AI__BASE_URL=${NEAR_AI_BASE_URL:-https://api.near.ai/v1}
+      - NEAR_AI__MODEL=${NEAR_AI_MODEL:-llama-3.3-70b}
+      - CONVERSATION__MAX_MESSAGES=${CONVERSATION_MAX_MESSAGES:-50}
+      - CONVERSATION__TTL=${CONVERSATION_TTL:-24h}
+      - BOT__LOG_LEVEL=${LOG_LEVEL:-info}
+      - DSTACK__SOCKET_PATH=/var/run/dstack.sock
+    volumes:
+      - /var/run/dstack.sock:/var/run/dstack.sock:ro
+    depends_on:
+      signal-api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  signal-config:
+    driver: local
+
+networks:
+  default:
+    name: signal-bot-network
