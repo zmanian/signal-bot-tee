@@ -1,74 +1,115 @@
-# Implementation Plan: Signal Bot TEE
+# Implementation Plan: Signal Bot TEE (Rust)
 
-This document outlines the detailed implementation plan for the Signal → TEE → NEAR AI Cloud private AI chat proxy.
+This document outlines the detailed implementation plan for the Signal → TEE → NEAR AI Cloud private AI chat proxy, implemented in Rust for optimal TEE performance and security.
 
 ## Table of Contents
 
-1. [Project Structure](#1-project-structure)
-2. [Phase 1: Foundation](#2-phase-1-foundation)
-3. [Phase 2: Core Components](#3-phase-2-core-components)
-4. [Phase 3: Bot Application](#4-phase-3-bot-application)
-5. [Phase 4: TEE Integration](#5-phase-4-tee-integration)
-6. [Phase 5: Docker & Deployment](#6-phase-5-docker--deployment)
-7. [Phase 6: Testing](#7-phase-6-testing)
-8. [Phase 7: Documentation & Polish](#8-phase-7-documentation--polish)
-9. [File Manifest](#9-file-manifest)
-10. [Dependencies](#10-dependencies)
+1. [Why Rust](#1-why-rust)
+2. [Project Structure](#2-project-structure)
+3. [Phase 1: Foundation](#3-phase-1-foundation)
+4. [Phase 2: Core Components](#4-phase-2-core-components)
+5. [Phase 3: Signal Integration](#5-phase-3-signal-integration)
+6. [Phase 4: Bot Commands](#6-phase-4-bot-commands)
+7. [Phase 5: TEE Integration](#7-phase-5-tee-integration)
+8. [Phase 6: Docker & Deployment](#8-phase-6-docker--deployment)
+9. [Phase 7: Testing](#9-phase-7-testing)
+10. [Phase 8: Documentation & Polish](#10-phase-8-documentation--polish)
+11. [File Manifest](#11-file-manifest)
+12. [Dependencies](#12-dependencies)
 
 ---
 
-## 1. Project Structure
+## 1. Why Rust
+
+| Benefit | Impact on This Project |
+|---------|----------------------|
+| Memory safety | No buffer overflows in security-critical TEE code |
+| Small binary | ~15MB static binary vs ~300MB Node/Python |
+| Fast startup | <50ms cold start for TEE attestation |
+| No GC pauses | Predictable latency for real-time chat |
+| Minimal deps | Smaller attack surface, easier audits |
+| Single binary | Simple deployment, reproducible builds |
+| `cargo audit` | Built-in supply chain security |
+
+---
+
+## 2. Project Structure
 
 ```
 signal-bot-tee/
-├── bot/
-│   ├── __init__.py
-│   ├── main.py                    # Entry point
-│   ├── config.py                  # Configuration management
-│   ├── near_ai_client.py          # NEAR AI Cloud client
-│   ├── conversation.py            # Conversation state manager
-│   ├── dstack_client.py           # Dstack TEE utilities
-│   ├── commands/
-│   │   ├── __init__.py
-│   │   ├── base.py                # Base command class
-│   │   ├── chat.py                # Chat handler
-│   │   ├── verify.py              # Attestation verification
-│   │   ├── clear.py               # Clear history
-│   │   ├── help.py                # Help command
-│   │   └── models.py              # List models
-│   └── utils/
-│       ├── __init__.py
-│       ├── logging.py             # Logging configuration
-│       └── errors.py              # Custom exceptions
-├── tests/
-│   ├── __init__.py
-│   ├── conftest.py                # Pytest fixtures
-│   ├── test_near_ai_client.py
-│   ├── test_conversation.py
-│   ├── test_dstack_client.py
-│   ├── test_commands/
-│   │   ├── __init__.py
-│   │   ├── test_chat.py
-│   │   ├── test_verify.py
-│   │   └── test_clear.py
-│   └── integration/
-│       ├── __init__.py
-│       └── test_e2e.py
+├── Cargo.toml                     # Workspace root
+├── Cargo.lock                     # Locked dependencies
+├── rust-toolchain.toml            # Rust version pinning
+│
+├── crates/
+│   ├── signal-bot/                # Main application binary
+│   │   ├── Cargo.toml
+│   │   └── src/
+│   │       ├── main.rs            # Entry point
+│   │       ├── config.rs          # Configuration
+│   │       ├── error.rs           # Error types
+│   │       └── commands/
+│   │           ├── mod.rs
+│   │           ├── chat.rs        # Chat handler
+│   │           ├── verify.rs      # Attestation
+│   │           ├── clear.rs       # Clear history
+│   │           ├── help.rs        # Help command
+│   │           └── models.rs      # List models
+│   │
+│   ├── near-ai-client/            # NEAR AI SDK wrapper
+│   │   ├── Cargo.toml
+│   │   └── src/
+│   │       ├── lib.rs
+│   │       ├── client.rs          # OpenAI-compatible client
+│   │       ├── types.rs           # Request/response types
+│   │       └── error.rs           # Client errors
+│   │
+│   ├── conversation-store/        # Redis conversation storage
+│   │   ├── Cargo.toml
+│   │   └── src/
+│   │       ├── lib.rs
+│   │       ├── store.rs           # Redis operations
+│   │       ├── types.rs           # Message/Conversation types
+│   │       └── error.rs           # Storage errors
+│   │
+│   ├── dstack-client/             # Dstack TEE client
+│   │   ├── Cargo.toml
+│   │   └── src/
+│   │       ├── lib.rs
+│   │       ├── client.rs          # Guest agent client
+│   │       ├── types.rs           # Quote, AppInfo types
+│   │       └── error.rs           # TEE errors
+│   │
+│   └── signal-client/             # Signal REST API client
+│       ├── Cargo.toml
+│       └── src/
+│           ├── lib.rs
+│           ├── client.rs          # HTTP client
+│           ├── types.rs           # Message types
+│           ├── receiver.rs        # Message polling/websocket
+│           └── error.rs           # Signal errors
+│
+├── tests/                         # Integration tests
+│   ├── common/
+│   │   └── mod.rs                 # Test utilities
+│   ├── near_ai_test.rs
+│   ├── conversation_test.rs
+│   └── e2e_test.rs
+│
 ├── scripts/
 │   ├── setup_signal.sh            # Signal account setup
 │   ├── encrypt_secrets.sh         # Dstack encryption
-│   ├── verify_tee.py              # Manual TEE verification
-│   └── health_check.py            # Health monitoring
+│   └── verify_tee.sh              # TEE verification
+│
 ├── docker/
-│   ├── Dockerfile                 # Bot container
+│   ├── Dockerfile                 # Multi-stage production build
 │   ├── Dockerfile.dev             # Development container
-│   └── docker-compose.yaml        # Full stack composition
+│   └── docker-compose.yaml        # Full stack
+│
+├── .cargo/
+│   └── config.toml                # Cargo configuration
+│
 ├── .env.example                   # Environment template
-├── .env.encrypted.example         # Encrypted env template
-├── pyproject.toml                 # Python project config
-├── requirements.txt               # Production dependencies
-├── requirements-dev.txt           # Development dependencies
-├── Makefile                       # Common operations
 ├── DESIGN.md                      # Architecture design
 ├── IMPLEMENTATION_PLAN.md         # This file
 └── README.md                      # Project overview
@@ -76,1290 +117,2192 @@ signal-bot-tee/
 
 ---
 
-## 2. Phase 1: Foundation
+## 3. Phase 1: Foundation
 
-**Goal**: Set up project infrastructure, dependencies, and configuration management.
+**Goal**: Set up Rust workspace, dependencies, configuration, and error handling.
 
-### 2.1 Initialize Python Project
+### 3.1 Workspace Root
 
-**File: `pyproject.toml`**
+**File: `Cargo.toml`**
 
 ```toml
-[project]
-name = "signal-bot-tee"
+[workspace]
+resolver = "2"
+members = [
+    "crates/signal-bot",
+    "crates/near-ai-client",
+    "crates/conversation-store",
+    "crates/dstack-client",
+    "crates/signal-client",
+]
+
+[workspace.package]
 version = "0.1.0"
-description = "Signal bot running in TEE proxying to NEAR AI Cloud"
-requires-python = ">=3.11"
-dependencies = [
-    "httpx>=0.27.0",
-    "signalbot>=0.8.0",
-    "openai>=1.0.0",
-    "redis>=5.0.0",
-    "pydantic>=2.0.0",
-    "pydantic-settings>=2.0.0",
-]
+edition = "2021"
+rust-version = "1.75"
+license = "MIT"
+repository = "https://github.com/example/signal-bot-tee"
 
-[project.optional-dependencies]
-dev = [
-    "pytest>=8.0.0",
-    "pytest-asyncio>=0.23.0",
-    "pytest-cov>=4.0.0",
-    "mypy>=1.8.0",
-    "ruff>=0.2.0",
-    "fakeredis>=2.20.0",
-    "respx>=0.20.0",
-]
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
 
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-testpaths = ["tests"]
+# HTTP client
+reqwest = { version = "0.11", default-features = false, features = [
+    "json", "rustls-tls", "stream"
+] }
 
-[tool.ruff]
-line-length = 100
-target-version = "py311"
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 
-[tool.mypy]
-python_version = "3.11"
-strict = true
+# Redis
+redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Configuration
+config = "0.14"
+dotenvy = "0.15"
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Testing
+tokio-test = "0.4"
+mockall = "0.12"
+wiremock = "0.5"
+testcontainers = "0.15"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.release-debug]
+inherits = "release"
+debug = true
+strip = false
 ```
 
-### 2.2 Configuration Management
+### 3.2 Rust Toolchain
 
-**File: `bot/config.py`**
+**File: `rust-toolchain.toml`**
 
-```python
-"""Configuration management using pydantic-settings."""
-
-from pydantic_settings import BaseSettings
-from pydantic import Field
-from typing import Optional
-
-
-class Settings(BaseSettings):
-    """Application configuration loaded from environment variables."""
-
-    # Signal configuration
-    signal_service: str = Field(
-        default="http://signal-api:8080",
-        description="Signal CLI REST API endpoint"
-    )
-    signal_phone: str = Field(
-        description="Phone number for Signal bot"
-    )
-
-    # NEAR AI configuration
-    near_ai_api_key: str = Field(
-        description="NEAR AI Cloud API key"
-    )
-    near_ai_base_url: str = Field(
-        default="https://api.near.ai/v1",
-        description="NEAR AI API base URL"
-    )
-    near_ai_model: str = Field(
-        default="llama-3.3-70b",
-        description="Default model for chat completions"
-    )
-    near_ai_timeout: int = Field(
-        default=60,
-        description="Request timeout in seconds"
-    )
-
-    # Redis configuration
-    redis_url: str = Field(
-        default="redis://localhost:6379",
-        description="Redis connection URL"
-    )
-    redis_ttl_hours: int = Field(
-        default=24,
-        description="Conversation TTL in hours"
-    )
-    max_conversation_messages: int = Field(
-        default=50,
-        description="Maximum messages per conversation"
-    )
-
-    # Bot configuration
-    system_prompt: str = Field(
-        default="""You are a helpful AI assistant accessible via Signal.
-You provide accurate, thoughtful responses while being concise for mobile chat.
-You're running in a privacy-preserving environment with verifiable execution.""",
-        description="System prompt for AI conversations"
-    )
-    log_level: str = Field(
-        default="INFO",
-        description="Logging level"
-    )
-
-    # Dstack configuration
-    dstack_socket: str = Field(
-        default="/var/run/dstack.sock",
-        description="Dstack guest agent socket path"
-    )
-
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = False
-
-
-def get_settings() -> Settings:
-    """Get cached settings instance."""
-    return Settings()
+```toml
+[toolchain]
+channel = "1.75"
+components = ["rustfmt", "clippy"]
+targets = ["x86_64-unknown-linux-musl"]
 ```
 
-### 2.3 Logging Configuration
+### 3.3 Cargo Configuration
 
-**File: `bot/utils/logging.py`**
+**File: `.cargo/config.toml`**
 
-```python
-"""Logging configuration for the bot."""
+```toml
+[build]
+# Static linking for TEE deployment
+target = "x86_64-unknown-linux-musl"
 
-import logging
-import sys
-from typing import Optional
+[target.x86_64-unknown-linux-musl]
+linker = "rust-lld"
+rustflags = ["-C", "target-feature=+crt-static"]
 
+[env]
+# Optimize for size in release
+CARGO_PROFILE_RELEASE_OPT_LEVEL = "z"
 
-def setup_logging(level: str = "INFO") -> logging.Logger:
-    """
-    Configure application logging.
-
-    Args:
-        level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-
-    Returns:
-        Configured root logger
-    """
-    # Create formatter
-    formatter = logging.Formatter(
-        fmt="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S"
-    )
-
-    # Configure console handler
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(formatter)
-
-    # Get root logger
-    root_logger = logging.getLogger()
-    root_logger.setLevel(getattr(logging, level.upper()))
-    root_logger.addHandler(console_handler)
-
-    # Reduce noise from third-party libraries
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("httpcore").setLevel(logging.WARNING)
-
-    return root_logger
-
-
-def get_logger(name: str) -> logging.Logger:
-    """Get a named logger."""
-    return logging.getLogger(name)
+[alias]
+# Convenient aliases
+dev = "run --package signal-bot"
+t = "test --workspace"
+lint = "clippy --workspace --all-targets -- -D warnings"
 ```
 
-### 2.4 Custom Exceptions
+### 3.4 Main Application Cargo.toml
 
-**File: `bot/utils/errors.py`**
+**File: `crates/signal-bot/Cargo.toml`**
 
-```python
-"""Custom exceptions for the bot application."""
+```toml
+[package]
+name = "signal-bot"
+version.workspace = true
+edition.workspace = true
 
+[[bin]]
+name = "signal-bot"
+path = "src/main.rs"
 
-class BotError(Exception):
-    """Base exception for all bot errors."""
-    pass
+[dependencies]
+# Workspace crates
+near-ai-client = { path = "../near-ai-client" }
+conversation-store = { path = "../conversation-store" }
+dstack-client = { path = "../dstack-client" }
+signal-client = { path = "../signal-client" }
 
+# Workspace dependencies
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true
+config.workspace = true
+dotenvy.workspace = true
+chrono.workspace = true
 
-class NearAIError(BotError):
-    """Error communicating with NEAR AI Cloud."""
-    pass
-
-
-class NearAIRateLimitError(NearAIError):
-    """Rate limit exceeded on NEAR AI Cloud."""
-    pass
-
-
-class NearAIAuthError(NearAIError):
-    """Authentication failed with NEAR AI Cloud."""
-    pass
-
-
-class ConversationError(BotError):
-    """Error with conversation storage."""
-    pass
-
-
-class DstackError(BotError):
-    """Error communicating with Dstack guest agent."""
-    pass
-
-
-class AttestationError(DstackError):
-    """Error generating or validating attestation."""
-    pass
-
-
-class SignalError(BotError):
-    """Error communicating with Signal API."""
-    pass
+[dev-dependencies]
+tokio-test.workspace = true
+mockall.workspace = true
 ```
 
-### 2.5 Tasks for Phase 1
+### 3.5 Configuration Module
+
+**File: `crates/signal-bot/src/config.rs`**
+
+```rust
+//! Application configuration loaded from environment variables.
+
+use anyhow::{Context, Result};
+use serde::Deserialize;
+use std::time::Duration;
+
+/// Application configuration.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Config {
+    /// Signal configuration
+    #[serde(default)]
+    pub signal: SignalConfig,
+
+    /// NEAR AI configuration
+    pub near_ai: NearAiConfig,
+
+    /// Redis configuration
+    #[serde(default)]
+    pub redis: RedisConfig,
+
+    /// Bot configuration
+    #[serde(default)]
+    pub bot: BotConfig,
+
+    /// Dstack configuration
+    #[serde(default)]
+    pub dstack: DstackConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SignalConfig {
+    /// Signal CLI REST API endpoint
+    #[serde(default = "default_signal_service")]
+    pub service_url: String,
+
+    /// Phone number for Signal bot
+    pub phone_number: String,
+
+    /// Poll interval for messages
+    #[serde(default = "default_poll_interval", with = "humantime_serde")]
+    pub poll_interval: Duration,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct NearAiConfig {
+    /// NEAR AI API key
+    pub api_key: String,
+
+    /// API base URL
+    #[serde(default = "default_near_ai_url")]
+    pub base_url: String,
+
+    /// Default model
+    #[serde(default = "default_model")]
+    pub model: String,
+
+    /// Request timeout
+    #[serde(default = "default_timeout", with = "humantime_serde")]
+    pub timeout: Duration,
+
+    /// Max retries
+    #[serde(default = "default_retries")]
+    pub max_retries: u32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RedisConfig {
+    /// Redis connection URL
+    #[serde(default = "default_redis_url")]
+    pub url: String,
+
+    /// Conversation TTL
+    #[serde(default = "default_ttl", with = "humantime_serde")]
+    pub ttl: Duration,
+
+    /// Max messages per conversation
+    #[serde(default = "default_max_messages")]
+    pub max_messages: usize,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BotConfig {
+    /// System prompt for AI
+    #[serde(default = "default_system_prompt")]
+    pub system_prompt: String,
+
+    /// Log level
+    #[serde(default = "default_log_level")]
+    pub log_level: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct DstackConfig {
+    /// Dstack guest agent socket path
+    #[serde(default = "default_dstack_socket")]
+    pub socket_path: String,
+}
+
+// Default implementations
+impl Default for SignalConfig {
+    fn default() -> Self {
+        Self {
+            service_url: default_signal_service(),
+            phone_number: String::new(),
+            poll_interval: default_poll_interval(),
+        }
+    }
+}
+
+impl Default for RedisConfig {
+    fn default() -> Self {
+        Self {
+            url: default_redis_url(),
+            ttl: default_ttl(),
+            max_messages: default_max_messages(),
+        }
+    }
+}
+
+impl Default for BotConfig {
+    fn default() -> Self {
+        Self {
+            system_prompt: default_system_prompt(),
+            log_level: default_log_level(),
+        }
+    }
+}
+
+impl Default for DstackConfig {
+    fn default() -> Self {
+        Self {
+            socket_path: default_dstack_socket(),
+        }
+    }
+}
+
+// Default value functions
+fn default_signal_service() -> String {
+    "http://signal-api:8080".into()
+}
+
+fn default_poll_interval() -> Duration {
+    Duration::from_secs(1)
+}
+
+fn default_near_ai_url() -> String {
+    "https://api.near.ai/v1".into()
+}
+
+fn default_model() -> String {
+    "llama-3.3-70b".into()
+}
+
+fn default_timeout() -> Duration {
+    Duration::from_secs(60)
+}
+
+fn default_retries() -> u32 {
+    3
+}
+
+fn default_redis_url() -> String {
+    "redis://localhost:6379".into()
+}
+
+fn default_ttl() -> Duration {
+    Duration::from_secs(24 * 60 * 60) // 24 hours
+}
+
+fn default_max_messages() -> usize {
+    50
+}
+
+fn default_system_prompt() -> String {
+    "You are a helpful AI assistant accessible via Signal. \
+     You provide accurate, thoughtful responses while being concise for mobile chat. \
+     You're running in a privacy-preserving environment with verifiable execution."
+        .into()
+}
+
+fn default_log_level() -> String {
+    "info".into()
+}
+
+fn default_dstack_socket() -> String {
+    "/var/run/dstack.sock".into()
+}
+
+impl Config {
+    /// Load configuration from environment variables.
+    pub fn load() -> Result<Self> {
+        // Load .env file if present
+        dotenvy::dotenv().ok();
+
+        let config = config::Config::builder()
+            .add_source(
+                config::Environment::default()
+                    .separator("__")
+                    .try_parsing(true),
+            )
+            .build()
+            .context("Failed to build configuration")?;
+
+        config
+            .try_deserialize()
+            .context("Failed to deserialize configuration")
+    }
+}
+```
+
+### 3.6 Error Types
+
+**File: `crates/signal-bot/src/error.rs`**
+
+```rust
+//! Application error types.
+
+use thiserror::Error;
+
+/// Main application error type.
+#[derive(Error, Debug)]
+pub enum AppError {
+    #[error("Configuration error: {0}")]
+    Config(#[from] anyhow::Error),
+
+    #[error("Signal error: {0}")]
+    Signal(#[from] signal_client::SignalError),
+
+    #[error("NEAR AI error: {0}")]
+    NearAi(#[from] near_ai_client::NearAiError),
+
+    #[error("Conversation error: {0}")]
+    Conversation(#[from] conversation_store::ConversationError),
+
+    #[error("Dstack error: {0}")]
+    Dstack(#[from] dstack_client::DstackError),
+
+    #[error("Internal error: {0}")]
+    Internal(String),
+}
+
+/// Result type alias for application errors.
+pub type AppResult<T> = Result<T, AppError>;
+```
+
+### 3.7 Tasks for Phase 1
 
 | Task | Description | Files |
 |------|-------------|-------|
-| 1.1 | Create project structure | All directories |
-| 1.2 | Initialize pyproject.toml | `pyproject.toml` |
-| 1.3 | Create requirements files | `requirements.txt`, `requirements-dev.txt` |
-| 1.4 | Implement config module | `bot/config.py` |
-| 1.5 | Implement logging utility | `bot/utils/logging.py` |
-| 1.6 | Define custom exceptions | `bot/utils/errors.py` |
-| 1.7 | Create .env.example | `.env.example` |
-| 1.8 | Create Makefile | `Makefile` |
+| 1.1 | Create workspace Cargo.toml | `Cargo.toml` |
+| 1.2 | Set up rust-toolchain.toml | `rust-toolchain.toml` |
+| 1.3 | Configure cargo for static builds | `.cargo/config.toml` |
+| 1.4 | Create signal-bot crate | `crates/signal-bot/` |
+| 1.5 | Implement configuration | `crates/signal-bot/src/config.rs` |
+| 1.6 | Define error types | `crates/signal-bot/src/error.rs` |
+| 1.7 | Set up tracing/logging | `crates/signal-bot/src/main.rs` |
+| 1.8 | Create .env.example | `.env.example` |
 
 ---
 
-## 3. Phase 2: Core Components
+## 4. Phase 2: Core Components
 
-**Goal**: Implement the three core service clients: NEAR AI, Conversation Store, and Dstack.
+**Goal**: Implement the core client libraries as separate crates.
 
-### 3.1 NEAR AI Client
+### 4.1 NEAR AI Client
 
-**File: `bot/near_ai_client.py`**
+**File: `crates/near-ai-client/Cargo.toml`**
 
-```python
-"""NEAR AI Cloud client with attestation support."""
+```toml
+[package]
+name = "near-ai-client"
+version.workspace = true
+edition.workspace = true
 
-from openai import AsyncOpenAI
-from typing import AsyncGenerator, Optional
-import httpx
-import json
+[dependencies]
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
 
-from bot.utils.errors import NearAIError, NearAIRateLimitError, NearAIAuthError
-from bot.utils.logging import get_logger
+# Async streaming
+futures = "0.3"
+tokio-stream = "0.1"
 
-logger = get_logger(__name__)
-
-
-class NearAIClient:
-    """
-    OpenAI-compatible client for NEAR AI Cloud with attestation support.
-
-    NEAR AI Cloud provides:
-    - OpenAI-compatible /v1/chat/completions endpoint
-    - GPU TEE attestation per-request
-    - ~5-10% latency overhead for privacy guarantees
-
-    Example:
-        >>> client = NearAIClient(api_key="sk-...", model="llama-3.3-70b")
-        >>> response = await client.chat([{"role": "user", "content": "Hello!"}])
-        >>> print(response)
-    """
-
-    def __init__(
-        self,
-        api_key: str,
-        base_url: str = "https://api.near.ai/v1",
-        model: str = "llama-3.3-70b",
-        timeout: int = 60,
-        max_retries: int = 3
-    ):
-        """
-        Initialize NEAR AI client.
-
-        Args:
-            api_key: NEAR AI API key
-            base_url: API base URL
-            model: Default model for completions
-            timeout: Request timeout in seconds
-            max_retries: Maximum retry attempts
-        """
-        self.client = AsyncOpenAI(
-            api_key=api_key,
-            base_url=base_url,
-            timeout=timeout,
-            max_retries=max_retries
-        )
-        self.model = model
-        self.base_url = base_url
-        self._api_key = api_key
-
-    async def chat(
-        self,
-        messages: list[dict],
-        stream: bool = False,
-        model: Optional[str] = None,
-        temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
-        **kwargs
-    ) -> str | AsyncGenerator[str, None]:
-        """
-        Send chat completion request to NEAR AI Cloud.
-
-        Args:
-            messages: List of messages in OpenAI format
-            stream: Whether to stream response
-            model: Model override (uses default if None)
-            temperature: Sampling temperature
-            max_tokens: Maximum tokens in response
-            **kwargs: Additional OpenAI parameters
-
-        Returns:
-            Complete response string or async generator for streaming
-
-        Raises:
-            NearAIError: On API errors
-            NearAIRateLimitError: On rate limit
-            NearAIAuthError: On authentication failure
-        """
-        try:
-            if stream:
-                return self._stream_chat(
-                    messages, model=model, temperature=temperature,
-                    max_tokens=max_tokens, **kwargs
-                )
-
-            response = await self.client.chat.completions.create(
-                model=model or self.model,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                **kwargs
-            )
-            return response.choices[0].message.content or ""
-
-        except Exception as e:
-            self._handle_error(e)
-
-    async def _stream_chat(
-        self,
-        messages: list[dict],
-        model: Optional[str] = None,
-        **kwargs
-    ) -> AsyncGenerator[str, None]:
-        """Stream chat responses for real-time output."""
-        try:
-            stream = await self.client.chat.completions.create(
-                model=model or self.model,
-                messages=messages,
-                stream=True,
-                **kwargs
-            )
-            async for chunk in stream:
-                if chunk.choices[0].delta.content:
-                    yield chunk.choices[0].delta.content
-
-        except Exception as e:
-            self._handle_error(e)
-
-    async def get_attestation(self) -> dict:
-        """
-        Fetch attestation report from NEAR AI Cloud.
-
-        Returns:
-            Attestation report containing GPU TEE proofs
-
-        Raises:
-            NearAIError: On API errors
-        """
-        try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.get(
-                    f"{self.base_url}/attestation",
-                    headers={"Authorization": f"Bearer {self._api_key}"}
-                )
-                resp.raise_for_status()
-                return resp.json()
-        except httpx.HTTPStatusError as e:
-            raise NearAIError(f"Failed to get attestation: {e.response.status_code}")
-        except Exception as e:
-            raise NearAIError(f"Attestation request failed: {e}")
-
-    async def get_models(self) -> list[dict]:
-        """
-        List available models on NEAR AI Cloud.
-
-        Returns:
-            List of model information dictionaries
-        """
-        try:
-            models = await self.client.models.list()
-            return [m.model_dump() for m in models.data]
-        except Exception as e:
-            raise NearAIError(f"Failed to list models: {e}")
-
-    async def health_check(self) -> bool:
-        """
-        Check if NEAR AI Cloud is reachable.
-
-        Returns:
-            True if healthy, False otherwise
-        """
-        try:
-            await self.client.models.list()
-            return True
-        except Exception:
-            return False
-
-    def _handle_error(self, error: Exception) -> None:
-        """Convert exceptions to custom error types."""
-        error_str = str(error).lower()
-
-        if "rate limit" in error_str or "429" in error_str:
-            raise NearAIRateLimitError(f"Rate limit exceeded: {error}")
-        elif "unauthorized" in error_str or "401" in error_str:
-            raise NearAIAuthError(f"Authentication failed: {error}")
-        else:
-            raise NearAIError(f"NEAR AI request failed: {error}")
+[dev-dependencies]
+tokio-test.workspace = true
+wiremock.workspace = true
 ```
 
-### 3.2 Conversation Store
+**File: `crates/near-ai-client/src/lib.rs`**
 
-**File: `bot/conversation.py`**
+```rust
+//! NEAR AI Cloud client with OpenAI-compatible API.
 
-```python
-"""Per-user conversation history with Redis backend."""
+mod client;
+mod error;
+mod types;
 
-import redis.asyncio as redis
-import json
-from typing import Optional
-from dataclasses import dataclass, asdict, field
-from datetime import datetime, timedelta
+pub use client::NearAiClient;
+pub use error::NearAiError;
+pub use types::*;
+```
 
-from bot.utils.errors import ConversationError
-from bot.utils.logging import get_logger
+**File: `crates/near-ai-client/src/error.rs`**
 
-logger = get_logger(__name__)
+```rust
+//! NEAR AI client errors.
 
+use thiserror::Error;
 
-@dataclass
-class Message:
-    """Single message in a conversation."""
-    role: str  # "user", "assistant", "system"
-    content: str
-    timestamp: float = field(default_factory=lambda: datetime.utcnow().timestamp())
+#[derive(Error, Debug)]
+pub enum NearAiError {
+    #[error("HTTP error: {0}")]
+    Http(#[from] reqwest::Error),
 
+    #[error("Rate limit exceeded")]
+    RateLimit,
 
-@dataclass
-class Conversation:
-    """Full conversation state for a user."""
-    user_id: str  # Signal phone number or group ID
-    messages: list[Message]
-    created_at: float
-    updated_at: float
-    system_prompt: Optional[str] = None
+    #[error("Authentication failed")]
+    Unauthorized,
 
+    #[error("API error: {status} - {message}")]
+    Api { status: u16, message: String },
 
-class ConversationStore:
-    """
-    Redis-backed conversation storage.
+    #[error("JSON error: {0}")]
+    Json(#[from] serde_json::Error),
 
-    Features:
-    - Maintains chat history per Signal user/group
-    - Auto-expires old conversations via TTL
-    - Limits context window size to prevent token overflow
-    - Async operations throughout
+    #[error("Stream error: {0}")]
+    Stream(String),
+}
+```
 
-    Example:
-        >>> store = ConversationStore("redis://localhost:6379")
-        >>> await store.add_message("+1234567890", "user", "Hello!")
-        >>> messages = await store.to_openai_messages("+1234567890")
-    """
+**File: `crates/near-ai-client/src/types.rs`**
 
-    def __init__(
-        self,
-        redis_url: str = "redis://localhost:6379",
-        max_messages: int = 50,
-        ttl_hours: int = 24
-    ):
-        """
-        Initialize conversation store.
+```rust
+//! Request and response types for NEAR AI API.
 
-        Args:
-            redis_url: Redis connection URL
-            max_messages: Maximum messages to retain per conversation
-            ttl_hours: Conversation expiration time in hours
-        """
-        self._redis_url = redis_url
-        self._redis: Optional[redis.Redis] = None
-        self.max_messages = max_messages
-        self.ttl = timedelta(hours=ttl_hours)
+use serde::{Deserialize, Serialize};
 
-    async def connect(self) -> None:
-        """Establish Redis connection."""
-        if self._redis is None:
-            self._redis = redis.from_url(self._redis_url)
-            logger.info(f"Connected to Redis at {self._redis_url}")
+/// Chat message role.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum Role {
+    System,
+    User,
+    Assistant,
+}
 
-    async def disconnect(self) -> None:
-        """Close Redis connection."""
-        if self._redis:
-            await self._redis.close()
-            self._redis = None
+/// A single chat message.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Message {
+    pub role: Role,
+    pub content: String,
+}
 
-    @property
-    def redis(self) -> redis.Redis:
-        """Get Redis client, raising if not connected."""
-        if self._redis is None:
-            raise ConversationError("Redis not connected. Call connect() first.")
-        return self._redis
+impl Message {
+    pub fn system(content: impl Into<String>) -> Self {
+        Self {
+            role: Role::System,
+            content: content.into(),
+        }
+    }
 
-    def _key(self, user_id: str) -> str:
-        """Generate Redis key for user conversation."""
-        return f"conversation:{user_id}"
+    pub fn user(content: impl Into<String>) -> Self {
+        Self {
+            role: Role::User,
+            content: content.into(),
+        }
+    }
 
-    async def get(self, user_id: str) -> Optional[Conversation]:
-        """
-        Get conversation for user.
+    pub fn assistant(content: impl Into<String>) -> Self {
+        Self {
+            role: Role::Assistant,
+            content: content.into(),
+        }
+    }
+}
 
-        Args:
-            user_id: Signal phone number or group ID
+/// Chat completion request.
+#[derive(Debug, Clone, Serialize)]
+pub struct ChatRequest {
+    pub model: String,
+    pub messages: Vec<Message>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream: Option<bool>,
+}
 
-        Returns:
-            Conversation if exists, None otherwise
-        """
-        try:
-            data = await self.redis.get(self._key(user_id))
-            if not data:
-                return None
+/// Chat completion response.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ChatResponse {
+    pub id: String,
+    pub object: String,
+    pub created: u64,
+    pub model: String,
+    pub choices: Vec<Choice>,
+    pub usage: Option<Usage>,
+}
 
-            obj = json.loads(data)
-            return Conversation(
-                user_id=obj["user_id"],
-                messages=[Message(**m) for m in obj["messages"]],
-                created_at=obj["created_at"],
-                updated_at=obj["updated_at"],
-                system_prompt=obj.get("system_prompt")
-            )
-        except Exception as e:
-            logger.error(f"Failed to get conversation for {user_id}: {e}")
-            raise ConversationError(f"Failed to retrieve conversation: {e}")
+#[derive(Debug, Clone, Deserialize)]
+pub struct Choice {
+    pub index: u32,
+    pub message: Message,
+    pub finish_reason: Option<String>,
+}
 
-    async def add_message(
-        self,
-        user_id: str,
-        role: str,
-        content: str,
-        system_prompt: Optional[str] = None
-    ) -> Conversation:
-        """
-        Add message to conversation, creating if needed.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Usage {
+    pub prompt_tokens: u32,
+    pub completion_tokens: u32,
+    pub total_tokens: u32,
+}
 
-        Args:
-            user_id: Signal phone number or group ID
-            role: Message role (user, assistant, system)
-            content: Message content
-            system_prompt: System prompt override
+/// Streaming chunk response.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ChatChunk {
+    pub id: String,
+    pub object: String,
+    pub created: u64,
+    pub model: String,
+    pub choices: Vec<ChunkChoice>,
+}
 
-        Returns:
-            Updated conversation
-        """
-        now = datetime.utcnow().timestamp()
-        conv = await self.get(user_id)
+#[derive(Debug, Clone, Deserialize)]
+pub struct ChunkChoice {
+    pub index: u32,
+    pub delta: Delta,
+    pub finish_reason: Option<String>,
+}
 
-        if conv is None:
-            conv = Conversation(
-                user_id=user_id,
-                messages=[],
-                created_at=now,
-                updated_at=now,
-                system_prompt=system_prompt
-            )
-            logger.debug(f"Created new conversation for {user_id}")
+#[derive(Debug, Clone, Deserialize)]
+pub struct Delta {
+    pub role: Option<Role>,
+    pub content: Option<String>,
+}
 
-        conv.messages.append(Message(role=role, content=content, timestamp=now))
-        conv.updated_at = now
+/// Model information.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Model {
+    pub id: String,
+    pub object: String,
+    pub created: u64,
+    pub owned_by: String,
+}
 
-        # Update system prompt if provided
-        if system_prompt and conv.system_prompt != system_prompt:
-            conv.system_prompt = system_prompt
+/// Models list response.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ModelsResponse {
+    pub object: String,
+    pub data: Vec<Model>,
+}
 
-        # Trim to max messages (keeping most recent)
-        if len(conv.messages) > self.max_messages:
-            conv.messages = conv.messages[-self.max_messages:]
+/// Attestation report from NEAR AI.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AttestationReport {
+    #[serde(flatten)]
+    pub extra: serde_json::Value,
+}
+```
 
-        # Persist with TTL
-        try:
-            await self.redis.setex(
-                self._key(user_id),
-                self.ttl,
-                json.dumps({
-                    "user_id": conv.user_id,
-                    "messages": [asdict(m) for m in conv.messages],
-                    "created_at": conv.created_at,
-                    "updated_at": conv.updated_at,
-                    "system_prompt": conv.system_prompt
+**File: `crates/near-ai-client/src/client.rs`**
+
+```rust
+//! NEAR AI Cloud HTTP client.
+
+use crate::error::NearAiError;
+use crate::types::*;
+use futures::StreamExt;
+use reqwest::{Client, StatusCode};
+use std::time::Duration;
+use tokio_stream::Stream;
+use tracing::{debug, instrument, warn};
+
+/// NEAR AI Cloud client.
+#[derive(Clone)]
+pub struct NearAiClient {
+    client: Client,
+    base_url: String,
+    api_key: String,
+    model: String,
+}
+
+impl NearAiClient {
+    /// Create a new NEAR AI client.
+    pub fn new(
+        api_key: impl Into<String>,
+        base_url: impl Into<String>,
+        model: impl Into<String>,
+        timeout: Duration,
+    ) -> Result<Self, NearAiError> {
+        let client = Client::builder()
+            .timeout(timeout)
+            .build()?;
+
+        Ok(Self {
+            client,
+            base_url: base_url.into(),
+            api_key: api_key.into(),
+            model: model.into(),
+        })
+    }
+
+    /// Get the configured model name.
+    pub fn model(&self) -> &str {
+        &self.model
+    }
+
+    /// Send a chat completion request.
+    #[instrument(skip(self, messages), fields(message_count = messages.len()))]
+    pub async fn chat(
+        &self,
+        messages: Vec<Message>,
+        temperature: Option<f32>,
+        max_tokens: Option<u32>,
+    ) -> Result<String, NearAiError> {
+        let request = ChatRequest {
+            model: self.model.clone(),
+            messages,
+            temperature,
+            max_tokens,
+            stream: Some(false),
+        };
+
+        let response = self
+            .client
+            .post(format!("{}/chat/completions", self.base_url))
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .json(&request)
+            .send()
+            .await?;
+
+        self.handle_response::<ChatResponse>(response)
+            .await
+            .map(|r| {
+                r.choices
+                    .into_iter()
+                    .next()
+                    .map(|c| c.message.content)
+                    .unwrap_or_default()
+            })
+    }
+
+    /// Send a streaming chat completion request.
+    #[instrument(skip(self, messages), fields(message_count = messages.len()))]
+    pub async fn chat_stream(
+        &self,
+        messages: Vec<Message>,
+        temperature: Option<f32>,
+        max_tokens: Option<u32>,
+    ) -> Result<impl Stream<Item = Result<String, NearAiError>>, NearAiError> {
+        let request = ChatRequest {
+            model: self.model.clone(),
+            messages,
+            temperature,
+            max_tokens,
+            stream: Some(true),
+        };
+
+        let response = self
+            .client
+            .post(format!("{}/chat/completions", self.base_url))
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .json(&request)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(self.extract_error(response).await);
+        }
+
+        let stream = response.bytes_stream().map(|result| {
+            result
+                .map_err(NearAiError::from)
+                .and_then(|bytes| {
+                    // Parse SSE data
+                    let text = String::from_utf8_lossy(&bytes);
+                    let mut content = String::new();
+
+                    for line in text.lines() {
+                        if let Some(data) = line.strip_prefix("data: ") {
+                            if data == "[DONE]" {
+                                continue;
+                            }
+                            if let Ok(chunk) = serde_json::from_str::<ChatChunk>(data) {
+                                if let Some(delta_content) = chunk
+                                    .choices
+                                    .first()
+                                    .and_then(|c| c.delta.content.as_ref())
+                                {
+                                    content.push_str(delta_content);
+                                }
+                            }
+                        }
+                    }
+
+                    Ok(content)
                 })
-            )
-        except Exception as e:
-            logger.error(f"Failed to save conversation for {user_id}: {e}")
-            raise ConversationError(f"Failed to save conversation: {e}")
+        });
 
-        return conv
+        Ok(stream)
+    }
 
-    async def clear(self, user_id: str) -> bool:
-        """
-        Clear conversation history for user.
+    /// List available models.
+    #[instrument(skip(self))]
+    pub async fn list_models(&self) -> Result<Vec<Model>, NearAiError> {
+        let response = self
+            .client
+            .get(format!("{}/models", self.base_url))
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .send()
+            .await?;
 
-        Args:
-            user_id: Signal phone number or group ID
+        self.handle_response::<ModelsResponse>(response)
+            .await
+            .map(|r| r.data)
+    }
 
-        Returns:
-            True if conversation was deleted, False if didn't exist
-        """
-        try:
-            result = await self.redis.delete(self._key(user_id))
-            if result > 0:
-                logger.info(f"Cleared conversation for {user_id}")
-            return result > 0
-        except Exception as e:
-            logger.error(f"Failed to clear conversation for {user_id}: {e}")
-            raise ConversationError(f"Failed to clear conversation: {e}")
+    /// Get attestation report from NEAR AI.
+    #[instrument(skip(self))]
+    pub async fn get_attestation(&self) -> Result<AttestationReport, NearAiError> {
+        let response = self
+            .client
+            .get(format!("{}/attestation", self.base_url))
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .send()
+            .await?;
 
-    async def to_openai_messages(
-        self,
-        user_id: str,
-        system_prompt: Optional[str] = None
-    ) -> list[dict]:
-        """
-        Convert conversation to OpenAI messages format.
+        self.handle_response(response).await
+    }
 
-        Args:
-            user_id: Signal phone number or group ID
-            system_prompt: System prompt override
+    /// Health check - returns true if API is reachable.
+    pub async fn health_check(&self) -> bool {
+        self.list_models().await.is_ok()
+    }
 
-        Returns:
-            List of messages in OpenAI format
-        """
-        conv = await self.get(user_id)
-        messages = []
+    /// Handle HTTP response, converting errors appropriately.
+    async fn handle_response<T: serde::de::DeserializeOwned>(
+        &self,
+        response: reqwest::Response,
+    ) -> Result<T, NearAiError> {
+        let status = response.status();
 
-        # Add system prompt (priority: param > stored > none)
-        prompt = system_prompt or (conv.system_prompt if conv else None)
-        if prompt:
-            messages.append({"role": "system", "content": prompt})
+        if status.is_success() {
+            let body = response.text().await?;
+            debug!("Response body: {}", &body[..body.len().min(200)]);
+            serde_json::from_str(&body).map_err(NearAiError::from)
+        } else {
+            Err(self.extract_error(response).await)
+        }
+    }
 
-        # Add conversation history
-        if conv:
-            for msg in conv.messages:
-                messages.append({"role": msg.role, "content": msg.content})
+    /// Extract error information from failed response.
+    async fn extract_error(&self, response: reqwest::Response) -> NearAiError {
+        let status = response.status();
 
-        return messages
-
-    async def get_message_count(self, user_id: str) -> int:
-        """Get number of messages in conversation."""
-        conv = await self.get(user_id)
-        return len(conv.messages) if conv else 0
+        match status {
+            StatusCode::TOO_MANY_REQUESTS => {
+                warn!("Rate limit exceeded");
+                NearAiError::RateLimit
+            }
+            StatusCode::UNAUTHORIZED => {
+                warn!("Authentication failed");
+                NearAiError::Unauthorized
+            }
+            _ => {
+                let message = response
+                    .text()
+                    .await
+                    .unwrap_or_else(|_| "Unknown error".into());
+                NearAiError::Api {
+                    status: status.as_u16(),
+                    message,
+                }
+            }
+        }
+    }
+}
 ```
 
-### 3.3 Dstack Client
+### 4.2 Conversation Store
 
-**File: `bot/dstack_client.py`**
+**File: `crates/conversation-store/Cargo.toml`**
 
-```python
-"""Dstack TEE guest agent client."""
+```toml
+[package]
+name = "conversation-store"
+version.workspace = true
+edition.workspace = true
 
-import httpx
-from typing import Optional
-import base64
+[dependencies]
+redis.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+chrono.workspace = true
 
-from bot.utils.errors import DstackError, AttestationError
-from bot.utils.logging import get_logger
-
-logger = get_logger(__name__)
-
-DSTACK_SOCKET = "/var/run/dstack.sock"
-
-
-class DstackClient:
-    """
-    Client for Dstack guest agent APIs.
-
-    The Dstack guest agent provides TEE services via Unix socket:
-    - Key derivation from hardware root of trust
-    - TDX attestation quote generation
-    - Application information and compose hash
-
-    Example:
-        >>> client = DstackClient()
-        >>> app_info = await client.get_app_info()
-        >>> quote = await client.get_quote(b"challenge")
-    """
-
-    def __init__(self, socket_path: str = DSTACK_SOCKET):
-        """
-        Initialize Dstack client.
-
-        Args:
-            socket_path: Path to Dstack Unix socket
-        """
-        self.socket_path = socket_path
-        self._transport = httpx.AsyncHTTPTransport(uds=socket_path)
-
-    async def derive_key(
-        self,
-        path: str,
-        subject: Optional[str] = None,
-        size: int = 32
-    ) -> bytes:
-        """
-        Derive a deterministic key from TEE root of trust.
-
-        The derived key is:
-        - Deterministic: Same path/subject always yields same key
-        - TEE-bound: Cannot be derived outside this TEE instance
-        - Hierarchy-based: Different paths yield different keys
-
-        Args:
-            path: Key derivation path (e.g., "/encryption/api-key")
-            subject: Optional subject to mix into derivation
-            size: Key size in bytes (default 32 = 256-bit)
-
-        Returns:
-            Derived key bytes
-
-        Raises:
-            DstackError: On derivation failure
-        """
-        try:
-            async with httpx.AsyncClient(transport=self._transport) as client:
-                params = {"path": path}
-                if subject:
-                    params["subject"] = subject
-
-                resp = await client.post(
-                    "http://localhost/DeriveKey",
-                    json=params,
-                    timeout=10
-                )
-                resp.raise_for_status()
-
-                key_hex = resp.json().get("key")
-                if not key_hex:
-                    raise DstackError("No key in derivation response")
-
-                return bytes.fromhex(key_hex)
-
-        except httpx.HTTPStatusError as e:
-            raise DstackError(f"Key derivation failed: HTTP {e.response.status_code}")
-        except Exception as e:
-            raise DstackError(f"Key derivation failed: {e}")
-
-    async def get_quote(self, report_data: bytes) -> dict:
-        """
-        Generate TDX attestation quote.
-
-        The quote proves:
-        - Genuine Intel TDX hardware
-        - Expected firmware measurements (MRTD)
-        - Expected kernel measurements (RTMRs)
-        - Custom report data for freshness
-
-        Args:
-            report_data: 64-byte challenge/nonce for freshness
-                        (will be truncated/padded if different size)
-
-        Returns:
-            Quote dictionary containing:
-            - quote: Base64-encoded TDX quote
-            - report_data: The included report data
-
-        Raises:
-            AttestationError: On quote generation failure
-        """
-        try:
-            # Ensure report_data is exactly 64 bytes
-            if len(report_data) < 64:
-                report_data = report_data + b'\x00' * (64 - len(report_data))
-            elif len(report_data) > 64:
-                report_data = report_data[:64]
-
-            async with httpx.AsyncClient(transport=self._transport) as client:
-                resp = await client.get(
-                    "http://localhost/GetQuote",
-                    params={"report_data": report_data.hex()},
-                    timeout=30  # Quote generation can be slow
-                )
-                resp.raise_for_status()
-                return resp.json()
-
-        except httpx.HTTPStatusError as e:
-            raise AttestationError(f"Quote generation failed: HTTP {e.response.status_code}")
-        except Exception as e:
-            raise AttestationError(f"Quote generation failed: {e}")
-
-    async def get_app_info(self) -> dict:
-        """
-        Get application info including compose-hash.
-
-        Returns:
-            Application info containing:
-            - app_id: Unique application identifier
-            - compose_hash: Hash of docker-compose configuration
-            - instance_id: Unique instance identifier
-
-        Raises:
-            DstackError: On info retrieval failure
-        """
-        try:
-            async with httpx.AsyncClient(transport=self._transport) as client:
-                resp = await client.get(
-                    "http://localhost/Info",
-                    timeout=10
-                )
-                resp.raise_for_status()
-                return resp.json()
-
-        except httpx.HTTPStatusError as e:
-            raise DstackError(f"App info failed: HTTP {e.response.status_code}")
-        except Exception as e:
-            raise DstackError(f"App info failed: {e}")
-
-    async def is_in_tee(self) -> bool:
-        """
-        Check if running inside a TEE.
-
-        Returns:
-            True if Dstack socket is accessible, False otherwise
-        """
-        try:
-            await self.get_app_info()
-            return True
-        except Exception:
-            return False
-
-    async def get_ra_tls_cert(self) -> bytes:
-        """
-        Get RA-TLS certificate for authenticated TLS connections.
-
-        Returns:
-            PEM-encoded certificate with attestation embedded
-
-        Raises:
-            AttestationError: On certificate generation failure
-        """
-        try:
-            async with httpx.AsyncClient(transport=self._transport) as client:
-                resp = await client.get(
-                    "http://localhost/GetRaTlsCert",
-                    timeout=30
-                )
-                resp.raise_for_status()
-                cert_b64 = resp.json().get("cert")
-                if not cert_b64:
-                    raise AttestationError("No certificate in response")
-                return base64.b64decode(cert_b64)
-
-        except httpx.HTTPStatusError as e:
-            raise AttestationError(f"RA-TLS cert failed: HTTP {e.response.status_code}")
-        except Exception as e:
-            raise AttestationError(f"RA-TLS cert failed: {e}")
+[dev-dependencies]
+tokio-test.workspace = true
+testcontainers.workspace = true
 ```
 
-### 3.4 Tasks for Phase 2
+**File: `crates/conversation-store/src/lib.rs`**
+
+```rust
+//! Redis-backed conversation storage.
+
+mod error;
+mod store;
+mod types;
+
+pub use error::ConversationError;
+pub use store::ConversationStore;
+pub use types::*;
+```
+
+**File: `crates/conversation-store/src/error.rs`**
+
+```rust
+//! Conversation storage errors.
+
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum ConversationError {
+    #[error("Redis error: {0}")]
+    Redis(#[from] redis::RedisError),
+
+    #[error("Serialization error: {0}")]
+    Serialization(#[from] serde_json::Error),
+
+    #[error("Not connected to Redis")]
+    NotConnected,
+}
+```
+
+**File: `crates/conversation-store/src/types.rs`**
+
+```rust
+//! Conversation and message types.
+
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+
+/// A single message in a conversation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StoredMessage {
+    pub role: String,
+    pub content: String,
+    pub timestamp: DateTime<Utc>,
+}
+
+impl StoredMessage {
+    pub fn new(role: impl Into<String>, content: impl Into<String>) -> Self {
+        Self {
+            role: role.into(),
+            content: content.into(),
+            timestamp: Utc::now(),
+        }
+    }
+}
+
+/// A conversation with a user.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Conversation {
+    pub user_id: String,
+    pub messages: Vec<StoredMessage>,
+    pub system_prompt: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl Conversation {
+    pub fn new(user_id: impl Into<String>, system_prompt: Option<String>) -> Self {
+        let now = Utc::now();
+        Self {
+            user_id: user_id.into(),
+            messages: Vec::new(),
+            system_prompt,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    /// Add a message to the conversation.
+    pub fn add_message(&mut self, role: &str, content: &str) {
+        self.messages.push(StoredMessage::new(role, content));
+        self.updated_at = Utc::now();
+    }
+
+    /// Trim to max messages, keeping most recent.
+    pub fn trim(&mut self, max_messages: usize) {
+        if self.messages.len() > max_messages {
+            let start = self.messages.len() - max_messages;
+            self.messages = self.messages[start..].to_vec();
+        }
+    }
+}
+
+/// OpenAI-compatible message format.
+#[derive(Debug, Clone, Serialize)]
+pub struct OpenAiMessage {
+    pub role: String,
+    pub content: String,
+}
+```
+
+**File: `crates/conversation-store/src/store.rs`**
+
+```rust
+//! Redis conversation storage implementation.
+
+use crate::error::ConversationError;
+use crate::types::*;
+use redis::aio::ConnectionManager;
+use redis::AsyncCommands;
+use std::time::Duration;
+use tracing::{debug, info, instrument};
+
+/// Redis-backed conversation store.
+#[derive(Clone)]
+pub struct ConversationStore {
+    conn: ConnectionManager,
+    max_messages: usize,
+    ttl: Duration,
+}
+
+impl ConversationStore {
+    /// Create a new conversation store.
+    pub async fn new(
+        redis_url: &str,
+        max_messages: usize,
+        ttl: Duration,
+    ) -> Result<Self, ConversationError> {
+        let client = redis::Client::open(redis_url)?;
+        let conn = ConnectionManager::new(client).await?;
+
+        info!("Connected to Redis at {}", redis_url);
+
+        Ok(Self {
+            conn,
+            max_messages,
+            ttl,
+        })
+    }
+
+    /// Generate Redis key for a user.
+    fn key(&self, user_id: &str) -> String {
+        format!("conversation:{}", user_id)
+    }
+
+    /// Get conversation for a user.
+    #[instrument(skip(self))]
+    pub async fn get(&self, user_id: &str) -> Result<Option<Conversation>, ConversationError> {
+        let mut conn = self.conn.clone();
+        let data: Option<String> = conn.get(self.key(user_id)).await?;
+
+        match data {
+            Some(json) => {
+                let conv: Conversation = serde_json::from_str(&json)?;
+                debug!("Retrieved conversation with {} messages", conv.messages.len());
+                Ok(Some(conv))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Add a message to a conversation, creating if needed.
+    #[instrument(skip(self, content))]
+    pub async fn add_message(
+        &self,
+        user_id: &str,
+        role: &str,
+        content: &str,
+        system_prompt: Option<&str>,
+    ) -> Result<Conversation, ConversationError> {
+        let mut conv = self
+            .get(user_id)
+            .await?
+            .unwrap_or_else(|| Conversation::new(user_id, system_prompt.map(String::from)));
+
+        // Update system prompt if provided
+        if let Some(prompt) = system_prompt {
+            conv.system_prompt = Some(prompt.to_string());
+        }
+
+        // Add the message
+        conv.add_message(role, content);
+
+        // Trim old messages
+        conv.trim(self.max_messages);
+
+        // Save to Redis
+        self.save(&conv).await?;
+
+        Ok(conv)
+    }
+
+    /// Save a conversation to Redis.
+    async fn save(&self, conv: &Conversation) -> Result<(), ConversationError> {
+        let mut conn = self.conn.clone();
+        let json = serde_json::to_string(conv)?;
+        let ttl_secs = self.ttl.as_secs() as i64;
+
+        conn.set_ex(self.key(&conv.user_id), json, ttl_secs as u64)
+            .await?;
+
+        debug!("Saved conversation for {}", conv.user_id);
+        Ok(())
+    }
+
+    /// Clear a user's conversation.
+    #[instrument(skip(self))]
+    pub async fn clear(&self, user_id: &str) -> Result<bool, ConversationError> {
+        let mut conn = self.conn.clone();
+        let deleted: i64 = conn.del(self.key(user_id)).await?;
+
+        if deleted > 0 {
+            info!("Cleared conversation for {}", user_id);
+        }
+
+        Ok(deleted > 0)
+    }
+
+    /// Convert conversation to OpenAI messages format.
+    pub async fn to_openai_messages(
+        &self,
+        user_id: &str,
+        system_prompt: Option<&str>,
+    ) -> Result<Vec<OpenAiMessage>, ConversationError> {
+        let conv = self.get(user_id).await?;
+        let mut messages = Vec::new();
+
+        // Add system prompt
+        let prompt = system_prompt
+            .map(String::from)
+            .or_else(|| conv.as_ref().and_then(|c| c.system_prompt.clone()));
+
+        if let Some(p) = prompt {
+            messages.push(OpenAiMessage {
+                role: "system".into(),
+                content: p,
+            });
+        }
+
+        // Add conversation history
+        if let Some(conv) = conv {
+            for msg in conv.messages {
+                messages.push(OpenAiMessage {
+                    role: msg.role,
+                    content: msg.content,
+                });
+            }
+        }
+
+        Ok(messages)
+    }
+
+    /// Get message count for a user.
+    pub async fn message_count(&self, user_id: &str) -> Result<usize, ConversationError> {
+        Ok(self
+            .get(user_id)
+            .await?
+            .map(|c| c.messages.len())
+            .unwrap_or(0))
+    }
+}
+```
+
+### 4.3 Dstack Client
+
+**File: `crates/dstack-client/Cargo.toml`**
+
+```toml
+[package]
+name = "dstack-client"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+# Unix socket support
+hyper = { version = "0.14", features = ["client", "http1"] }
+hyperlocal = "0.8"
+hex = "0.4"
+
+[dev-dependencies]
+tokio-test.workspace = true
+```
+
+**File: `crates/dstack-client/src/lib.rs`**
+
+```rust
+//! Dstack TEE guest agent client.
+
+mod client;
+mod error;
+mod types;
+
+pub use client::DstackClient;
+pub use error::DstackError;
+pub use types::*;
+```
+
+**File: `crates/dstack-client/src/error.rs`**
+
+```rust
+//! Dstack client errors.
+
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum DstackError {
+    #[error("HTTP error: {0}")]
+    Http(#[from] reqwest::Error),
+
+    #[error("Hyper error: {0}")]
+    Hyper(#[from] hyper::Error),
+
+    #[error("JSON error: {0}")]
+    Json(#[from] serde_json::Error),
+
+    #[error("Quote generation failed: {0}")]
+    QuoteGeneration(String),
+
+    #[error("Key derivation failed: {0}")]
+    KeyDerivation(String),
+
+    #[error("Not running in TEE")]
+    NotInTee,
+
+    #[error("Socket not found: {0}")]
+    SocketNotFound(String),
+}
+```
+
+**File: `crates/dstack-client/src/types.rs`**
+
+```rust
+//! Dstack API types.
+
+use serde::{Deserialize, Serialize};
+
+/// Application information from Dstack.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AppInfo {
+    /// Unique application identifier
+    pub app_id: Option<String>,
+
+    /// Hash of docker-compose configuration
+    pub compose_hash: Option<String>,
+
+    /// Unique instance identifier
+    pub instance_id: Option<String>,
+
+    /// Additional fields
+    #[serde(flatten)]
+    pub extra: serde_json::Value,
+}
+
+/// TDX attestation quote.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Quote {
+    /// Base64-encoded TDX quote
+    pub quote: String,
+
+    /// Report data that was included
+    pub report_data: Option<String>,
+}
+
+/// Key derivation request.
+#[derive(Debug, Clone, Serialize)]
+pub struct DeriveKeyRequest {
+    pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subject: Option<String>,
+}
+
+/// Key derivation response.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeriveKeyResponse {
+    /// Hex-encoded derived key
+    pub key: String,
+}
+
+/// RA-TLS certificate response.
+#[derive(Debug, Clone, Deserialize)]
+pub struct RaTlsCert {
+    /// Base64-encoded certificate
+    pub cert: String,
+}
+```
+
+**File: `crates/dstack-client/src/client.rs`**
+
+```rust
+//! Dstack guest agent client implementation.
+
+use crate::error::DstackError;
+use crate::types::*;
+use hyper::{Body, Client, Method, Request};
+use hyperlocal::{UnixClientExt, Uri};
+use std::path::Path;
+use tracing::{debug, instrument, warn};
+
+/// Client for Dstack guest agent.
+pub struct DstackClient {
+    socket_path: String,
+}
+
+impl DstackClient {
+    /// Create a new Dstack client.
+    pub fn new(socket_path: impl Into<String>) -> Self {
+        Self {
+            socket_path: socket_path.into(),
+        }
+    }
+
+    /// Check if running inside a TEE.
+    pub async fn is_in_tee(&self) -> bool {
+        if !Path::new(&self.socket_path).exists() {
+            return false;
+        }
+        self.get_app_info().await.is_ok()
+    }
+
+    /// Get application information.
+    #[instrument(skip(self))]
+    pub async fn get_app_info(&self) -> Result<AppInfo, DstackError> {
+        let response = self.request(Method::GET, "/Info", None).await?;
+        let info: AppInfo = serde_json::from_slice(&response)?;
+        debug!("Got app info: {:?}", info);
+        Ok(info)
+    }
+
+    /// Generate TDX attestation quote.
+    #[instrument(skip(self, report_data))]
+    pub async fn get_quote(&self, report_data: &[u8]) -> Result<Quote, DstackError> {
+        // Pad or truncate report_data to 64 bytes
+        let mut data = [0u8; 64];
+        let len = report_data.len().min(64);
+        data[..len].copy_from_slice(&report_data[..len]);
+
+        let hex_data = hex::encode(data);
+        let path = format!("/GetQuote?report_data={}", hex_data);
+
+        let response = self.request(Method::GET, &path, None).await?;
+        let quote: Quote = serde_json::from_slice(&response)?;
+
+        debug!("Generated quote with {} bytes", quote.quote.len());
+        Ok(quote)
+    }
+
+    /// Derive a key from TEE root of trust.
+    #[instrument(skip(self))]
+    pub async fn derive_key(
+        &self,
+        path: &str,
+        subject: Option<&str>,
+    ) -> Result<Vec<u8>, DstackError> {
+        let request = DeriveKeyRequest {
+            path: path.to_string(),
+            subject: subject.map(String::from),
+        };
+
+        let body = serde_json::to_vec(&request)?;
+        let response = self.request(Method::POST, "/DeriveKey", Some(body)).await?;
+        let result: DeriveKeyResponse = serde_json::from_slice(&response)?;
+
+        hex::decode(&result.key).map_err(|e| DstackError::KeyDerivation(e.to_string()))
+    }
+
+    /// Get RA-TLS certificate.
+    #[instrument(skip(self))]
+    pub async fn get_ra_tls_cert(&self) -> Result<Vec<u8>, DstackError> {
+        let response = self.request(Method::GET, "/GetRaTlsCert", None).await?;
+        let cert: RaTlsCert = serde_json::from_slice(&response)?;
+
+        use base64::{engine::general_purpose::STANDARD, Engine};
+        STANDARD
+            .decode(&cert.cert)
+            .map_err(|e| DstackError::QuoteGeneration(e.to_string()))
+    }
+
+    /// Make HTTP request to Dstack socket.
+    async fn request(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<Vec<u8>>,
+    ) -> Result<Vec<u8>, DstackError> {
+        if !Path::new(&self.socket_path).exists() {
+            return Err(DstackError::SocketNotFound(self.socket_path.clone()));
+        }
+
+        let client = Client::unix();
+        let uri = Uri::new(&self.socket_path, path);
+
+        let mut request = Request::builder()
+            .method(method)
+            .uri(uri)
+            .header("Content-Type", "application/json");
+
+        let body = match body {
+            Some(b) => Body::from(b),
+            None => Body::empty(),
+        };
+
+        let request = request.body(body).map_err(|e| {
+            DstackError::QuoteGeneration(format!("Failed to build request: {}", e))
+        })?;
+
+        let response = client.request(request).await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = hyper::body::to_bytes(response.into_body()).await?;
+            let msg = String::from_utf8_lossy(&body);
+            warn!("Dstack request failed: {} - {}", status, msg);
+            return Err(DstackError::QuoteGeneration(format!(
+                "HTTP {}: {}",
+                status, msg
+            )));
+        }
+
+        let body = hyper::body::to_bytes(response.into_body()).await?;
+        Ok(body.to_vec())
+    }
+}
+```
+
+### 4.4 Tasks for Phase 2
 
 | Task | Description | Files |
 |------|-------------|-------|
-| 2.1 | Implement NEAR AI client | `bot/near_ai_client.py` |
-| 2.2 | Add streaming support | `bot/near_ai_client.py` |
-| 2.3 | Add attestation endpoint | `bot/near_ai_client.py` |
-| 2.4 | Implement conversation dataclasses | `bot/conversation.py` |
-| 2.5 | Implement ConversationStore | `bot/conversation.py` |
-| 2.6 | Add conversation TTL and trimming | `bot/conversation.py` |
-| 2.7 | Implement Dstack client | `bot/dstack_client.py` |
-| 2.8 | Add key derivation | `bot/dstack_client.py` |
-| 2.9 | Add quote generation | `bot/dstack_client.py` |
-| 2.10 | Write unit tests for all clients | `tests/` |
+| 2.1 | Create near-ai-client crate | `crates/near-ai-client/` |
+| 2.2 | Implement chat completion | `client.rs` |
+| 2.3 | Implement streaming | `client.rs` |
+| 2.4 | Create conversation-store crate | `crates/conversation-store/` |
+| 2.5 | Implement Redis storage | `store.rs` |
+| 2.6 | Create dstack-client crate | `crates/dstack-client/` |
+| 2.7 | Implement Unix socket client | `client.rs` |
+| 2.8 | Implement quote generation | `client.rs` |
+| 2.9 | Write unit tests | `tests/` |
 
 ---
 
-## 4. Phase 3: Bot Application
+## 5. Phase 3: Signal Integration
 
-**Goal**: Implement the Signal bot commands and message handling.
+**Goal**: Implement Signal CLI REST API client.
 
-### 4.1 Base Command Class
+### 5.1 Signal Client
 
-**File: `bot/commands/base.py`**
+**File: `crates/signal-client/Cargo.toml`**
 
-```python
-"""Base command class for Signal bot commands."""
+```toml
+[package]
+name = "signal-client"
+version.workspace = true
+edition.workspace = true
 
-from abc import ABC, abstractmethod
-from typing import Optional
-from signalbot import Context
+[dependencies]
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+chrono.workspace = true
 
-from bot.utils.logging import get_logger
+# Async channels
+tokio-stream = "0.1"
+async-stream = "0.3"
 
-logger = get_logger(__name__)
-
-
-class BaseCommand(ABC):
-    """
-    Abstract base class for bot commands.
-
-    All commands should inherit from this class and implement
-    the required methods.
-    """
-
-    @property
-    @abstractmethod
-    def name(self) -> str:
-        """Command name (e.g., 'verify', 'clear')."""
-        pass
-
-    @property
-    @abstractmethod
-    def description(self) -> str:
-        """Short description of the command."""
-        pass
-
-    @property
-    def trigger(self) -> Optional[str]:
-        """
-        Trigger prefix for the command.
-
-        Returns:
-            Trigger string (e.g., '!verify') or None for default handler
-        """
-        return f"!{self.name}"
-
-    @property
-    def is_default(self) -> bool:
-        """Whether this is the default message handler."""
-        return False
-
-    @abstractmethod
-    async def execute(self, ctx: Context, user_id: str, message: str) -> None:
-        """
-        Execute the command.
-
-        Args:
-            ctx: Signal bot context
-            user_id: User's Signal phone number
-            message: Full message text
-        """
-        pass
-
-    async def send_error(self, ctx: Context, error_msg: str) -> None:
-        """Send an error message to the user."""
-        await ctx.send(f"❌ {error_msg}")
-        logger.warning(f"Command {self.name} error: {error_msg}")
+[dev-dependencies]
+tokio-test.workspace = true
+wiremock.workspace = true
 ```
 
-### 4.2 Chat Command
+**File: `crates/signal-client/src/lib.rs`**
 
-**File: `bot/commands/chat.py`**
+```rust
+//! Signal CLI REST API client.
 
-```python
-"""Chat command - proxies messages to NEAR AI Cloud."""
+mod client;
+mod error;
+mod receiver;
+mod types;
 
-from signalbot import Context
-
-from bot.commands.base import BaseCommand
-from bot.near_ai_client import NearAIClient
-from bot.conversation import ConversationStore
-from bot.utils.errors import NearAIError, NearAIRateLimitError
-from bot.utils.logging import get_logger
-
-logger = get_logger(__name__)
-
-
-class ChatCommand(BaseCommand):
-    """
-    Default message handler that proxies chat to NEAR AI Cloud.
-
-    Features:
-    - Maintains conversation history per user
-    - Handles rate limiting gracefully
-    - Provides typing indicators via Signal
-    """
-
-    def __init__(
-        self,
-        near_ai: NearAIClient,
-        conversations: ConversationStore,
-        system_prompt: str
-    ):
-        self.near_ai = near_ai
-        self.conversations = conversations
-        self.system_prompt = system_prompt
-
-    @property
-    def name(self) -> str:
-        return "chat"
-
-    @property
-    def description(self) -> str:
-        return "Chat with AI"
-
-    @property
-    def trigger(self) -> None:
-        return None  # Default handler
-
-    @property
-    def is_default(self) -> bool:
-        return True
-
-    async def execute(self, ctx: Context, user_id: str, message: str) -> None:
-        """Process chat message and respond with AI."""
-        # Skip command messages
-        if message.startswith("!"):
-            return
-
-        try:
-            logger.info(f"Chat from {user_id[:8]}...: {message[:50]}...")
-
-            # Add user message to history
-            await self.conversations.add_message(
-                user_id, "user", message, self.system_prompt
-            )
-
-            # Get full conversation for context
-            messages = await self.conversations.to_openai_messages(
-                user_id, self.system_prompt
-            )
-
-            # Query NEAR AI Cloud
-            response = await self.near_ai.chat(messages)
-
-            # Store assistant response
-            await self.conversations.add_message(user_id, "assistant", response)
-
-            # Send back via Signal
-            await ctx.send(response)
-
-            logger.info(f"Response to {user_id[:8]}...: {len(response)} chars")
-
-        except NearAIRateLimitError:
-            await ctx.send(
-                "⏳ I'm receiving too many requests right now. "
-                "Please wait a moment and try again."
-            )
-        except NearAIError as e:
-            logger.error(f"NEAR AI error: {e}")
-            await ctx.send(
-                "Sorry, I encountered an error connecting to the AI service. "
-                "Please try again in a moment."
-            )
-        except Exception as e:
-            logger.exception(f"Unexpected error in chat: {e}")
-            await ctx.send("Sorry, something went wrong. Please try again.")
+pub use client::SignalClient;
+pub use error::SignalError;
+pub use receiver::MessageReceiver;
+pub use types::*;
 ```
 
-### 4.3 Verify Command
+**File: `crates/signal-client/src/error.rs`**
 
-**File: `bot/commands/verify.py`**
+```rust
+//! Signal client errors.
 
-```python
-"""Verify command - provides dual attestation proofs."""
+use thiserror::Error;
 
-import hashlib
-from signalbot import Context
+#[derive(Error, Debug)]
+pub enum SignalError {
+    #[error("HTTP error: {0}")]
+    Http(#[from] reqwest::Error),
 
-from bot.commands.base import BaseCommand
-from bot.near_ai_client import NearAIClient
-from bot.dstack_client import DstackClient
-from bot.utils.errors import AttestationError, NearAIError, DstackError
-from bot.utils.logging import get_logger
+    #[error("JSON error: {0}")]
+    Json(#[from] serde_json::Error),
 
-logger = get_logger(__name__)
+    #[error("API error: {0}")]
+    Api(String),
 
+    #[error("Not registered")]
+    NotRegistered,
 
-class VerifyCommand(BaseCommand):
-    """
-    Provides dual attestation proofs from proxy and inference TEEs.
+    #[error("Send failed: {0}")]
+    SendFailed(String),
+}
+```
 
-    Returns:
-    - Proxy TEE (Dstack/Intel TDX) attestation info
-    - Inference TEE (NEAR AI/NVIDIA GPU) attestation info
-    - Verification links for independent validation
-    """
+**File: `crates/signal-client/src/types.rs`**
 
-    def __init__(self, near_ai: NearAIClient, dstack: DstackClient):
-        self.near_ai = near_ai
-        self.dstack = dstack
+```rust
+//! Signal API types.
 
-    @property
-    def name(self) -> str:
-        return "verify"
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
-    @property
-    def description(self) -> str:
-        return "Show privacy attestation proofs"
+/// Incoming Signal message.
+#[derive(Debug, Clone, Deserialize)]
+pub struct IncomingMessage {
+    pub envelope: Envelope,
+    pub account: String,
+}
 
-    async def execute(self, ctx: Context, user_id: str, message: str) -> None:
-        """Generate and send attestation verification response."""
-        try:
-            # Generate challenge based on timestamp for freshness
-            challenge = hashlib.sha256(
-                f"{ctx.message.timestamp}:{user_id}".encode()
-            ).digest()
+#[derive(Debug, Clone, Deserialize)]
+pub struct Envelope {
+    pub source: String,
+    #[serde(rename = "sourceNumber")]
+    pub source_number: Option<String>,
+    #[serde(rename = "sourceName")]
+    pub source_name: Option<String>,
+    pub timestamp: i64,
+    #[serde(rename = "dataMessage")]
+    pub data_message: Option<DataMessage>,
+}
 
-            # Collect attestation info (attempt both, report partial on failure)
-            proxy_info = await self._get_proxy_attestation(challenge)
-            near_info = await self._get_near_attestation()
+#[derive(Debug, Clone, Deserialize)]
+pub struct DataMessage {
+    pub message: Option<String>,
+    pub timestamp: i64,
+    #[serde(rename = "groupInfo")]
+    pub group_info: Option<GroupInfo>,
+}
 
-            # Format response
-            response = self._format_response(proxy_info, near_info)
-            await ctx.send(response)
+#[derive(Debug, Clone, Deserialize)]
+pub struct GroupInfo {
+    #[serde(rename = "groupId")]
+    pub group_id: String,
+}
 
-            logger.info(f"Attestation provided to {user_id[:8]}...")
+/// Outgoing message request.
+#[derive(Debug, Clone, Serialize)]
+pub struct SendMessageRequest {
+    pub message: String,
+    pub number: Option<String>,
+    pub recipients: Option<Vec<String>>,
+}
 
-        except Exception as e:
-            logger.exception(f"Attestation error: {e}")
-            await self.send_error(ctx, "Could not generate attestation. Please try again.")
+/// Send message response.
+#[derive(Debug, Clone, Deserialize)]
+pub struct SendMessageResponse {
+    pub timestamp: Option<i64>,
+}
 
-    async def _get_proxy_attestation(self, challenge: bytes) -> dict:
-        """Get proxy TEE attestation info."""
-        try:
-            # Check if running in TEE
-            if not await self.dstack.is_in_tee():
-                return {
-                    "available": False,
-                    "reason": "Not running in TEE environment"
+/// Account information.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Account {
+    pub number: String,
+    pub uuid: Option<String>,
+    pub registered: bool,
+}
+
+/// Parsed message for bot processing.
+#[derive(Debug, Clone)]
+pub struct BotMessage {
+    pub source: String,
+    pub text: String,
+    pub timestamp: i64,
+    pub is_group: bool,
+    pub group_id: Option<String>,
+}
+
+impl BotMessage {
+    /// Extract bot message from incoming envelope.
+    pub fn from_incoming(msg: &IncomingMessage) -> Option<Self> {
+        let data = msg.envelope.data_message.as_ref()?;
+        let text = data.message.clone()?;
+
+        Some(Self {
+            source: msg.envelope.source.clone(),
+            text,
+            timestamp: msg.envelope.timestamp,
+            is_group: data.group_info.is_some(),
+            group_id: data.group_info.as_ref().map(|g| g.group_id.clone()),
+        })
+    }
+
+    /// Get the reply target (group ID or source number).
+    pub fn reply_target(&self) -> &str {
+        self.group_id.as_deref().unwrap_or(&self.source)
+    }
+}
+```
+
+**File: `crates/signal-client/src/client.rs`**
+
+```rust
+//! Signal HTTP client.
+
+use crate::error::SignalError;
+use crate::types::*;
+use reqwest::Client;
+use std::time::Duration;
+use tracing::{debug, info, instrument, warn};
+
+/// Signal CLI REST API client.
+#[derive(Clone)]
+pub struct SignalClient {
+    client: Client,
+    base_url: String,
+    phone_number: String,
+}
+
+impl SignalClient {
+    /// Create a new Signal client.
+    pub fn new(
+        base_url: impl Into<String>,
+        phone_number: impl Into<String>,
+    ) -> Result<Self, SignalError> {
+        let client = Client::builder()
+            .timeout(Duration::from_secs(30))
+            .build()?;
+
+        Ok(Self {
+            client,
+            base_url: base_url.into(),
+            phone_number: phone_number.into(),
+        })
+    }
+
+    /// Get the configured phone number.
+    pub fn phone_number(&self) -> &str {
+        &self.phone_number
+    }
+
+    /// Check if the Signal API is healthy.
+    pub async fn health_check(&self) -> bool {
+        self.client
+            .get(format!("{}/v1/health", self.base_url))
+            .send()
+            .await
+            .map(|r| r.status().is_success())
+            .unwrap_or(false)
+    }
+
+    /// Get account information.
+    #[instrument(skip(self))]
+    pub async fn get_account(&self) -> Result<Account, SignalError> {
+        let response = self
+            .client
+            .get(format!("{}/v1/accounts/{}", self.base_url, self.phone_number))
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let msg = response.text().await.unwrap_or_default();
+            return Err(SignalError::Api(msg));
+        }
+
+        Ok(response.json().await?)
+    }
+
+    /// Receive pending messages.
+    #[instrument(skip(self))]
+    pub async fn receive(&self) -> Result<Vec<IncomingMessage>, SignalError> {
+        let response = self
+            .client
+            .get(format!(
+                "{}/v1/receive/{}",
+                self.base_url, self.phone_number
+            ))
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let msg = response.text().await.unwrap_or_default();
+            return Err(SignalError::Api(msg));
+        }
+
+        let messages: Vec<IncomingMessage> = response.json().await?;
+        debug!("Received {} messages", messages.len());
+        Ok(messages)
+    }
+
+    /// Send a message to a recipient.
+    #[instrument(skip(self, message))]
+    pub async fn send(&self, recipient: &str, message: &str) -> Result<(), SignalError> {
+        let request = SendMessageRequest {
+            message: message.to_string(),
+            number: Some(self.phone_number.clone()),
+            recipients: Some(vec![recipient.to_string()]),
+        };
+
+        let response = self
+            .client
+            .post(format!(
+                "{}/v2/send/{}",
+                self.base_url, self.phone_number
+            ))
+            .json(&request)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let msg = response.text().await.unwrap_or_default();
+            warn!("Send failed: {}", msg);
+            return Err(SignalError::SendFailed(msg));
+        }
+
+        debug!("Sent message to {}", recipient);
+        Ok(())
+    }
+
+    /// Reply to a message (handles both direct and group messages).
+    pub async fn reply(&self, original: &BotMessage, message: &str) -> Result<(), SignalError> {
+        self.send(original.reply_target(), message).await
+    }
+}
+```
+
+**File: `crates/signal-client/src/receiver.rs`**
+
+```rust
+//! Message receiver with polling.
+
+use crate::client::SignalClient;
+use crate::error::SignalError;
+use crate::types::*;
+use std::time::Duration;
+use tokio::time::sleep;
+use tokio_stream::Stream;
+use tracing::{debug, error, warn};
+
+/// Message receiver that polls for new messages.
+pub struct MessageReceiver {
+    client: SignalClient,
+    poll_interval: Duration,
+}
+
+impl MessageReceiver {
+    /// Create a new message receiver.
+    pub fn new(client: SignalClient, poll_interval: Duration) -> Self {
+        Self {
+            client,
+            poll_interval,
+        }
+    }
+
+    /// Start receiving messages as an async stream.
+    pub fn stream(self) -> impl Stream<Item = BotMessage> {
+        async_stream::stream! {
+            loop {
+                match self.client.receive().await {
+                    Ok(messages) => {
+                        for msg in messages {
+                            if let Some(bot_msg) = BotMessage::from_incoming(&msg) {
+                                debug!("Received: {} from {}",
+                                    &bot_msg.text[..bot_msg.text.len().min(50)],
+                                    bot_msg.source
+                                );
+                                yield bot_msg;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("Receive error: {}", e);
+                        // Back off on error
+                        sleep(Duration::from_secs(5)).await;
+                        continue;
+                    }
                 }
 
-            app_info = await self.dstack.get_app_info()
-            quote = await self.dstack.get_quote(challenge)
-
-            return {
-                "available": True,
-                "compose_hash": app_info.get("compose_hash", "N/A"),
-                "app_id": app_info.get("app_id", "N/A"),
-                "instance_id": app_info.get("instance_id", "N/A"),
-                "quote_generated": True
+                sleep(self.poll_interval).await;
             }
-
-        except DstackError as e:
-            logger.warning(f"Dstack attestation failed: {e}")
-            return {
-                "available": False,
-                "reason": str(e)
-            }
-
-    async def _get_near_attestation(self) -> dict:
-        """Get NEAR AI attestation info."""
-        try:
-            attestation = await self.near_ai.get_attestation()
-            return {
-                "available": True,
-                "model": self.near_ai.model,
-                **attestation
-            }
-        except NearAIError as e:
-            logger.warning(f"NEAR AI attestation failed: {e}")
-            return {
-                "available": False,
-                "model": self.near_ai.model,
-                "reason": str(e)
-            }
-
-    def _format_response(self, proxy: dict, near: dict) -> str:
-        """Format attestation information for user."""
-        lines = ["🔐 **Privacy Verification**", ""]
-
-        # Proxy section
-        lines.append("**Proxy (Signal Bot)**")
-        if proxy.get("available"):
-            lines.append(f"├─ TEE: Intel TDX")
-            lines.append(f"├─ Compose Hash: {proxy['compose_hash'][:16]}...")
-            lines.append(f"├─ App ID: {proxy['app_id'][:16]}...")
-            lines.append(f"└─ Verify: https://proof.phala.network")
-        else:
-            lines.append(f"└─ ⚠️ {proxy.get('reason', 'Unavailable')}")
-
-        lines.append("")
-
-        # Inference section
-        lines.append("**Inference (NEAR AI Cloud)**")
-        if near.get("available"):
-            lines.append(f"├─ TEE: NVIDIA GPU (H100/H200)")
-            lines.append(f"├─ Model: {near['model']}")
-            lines.append(f"├─ Gateway: Intel TDX")
-            lines.append(f"└─ Verify: https://near.ai/verify")
-        else:
-            lines.append(f"├─ Model: {near.get('model', 'N/A')}")
-            lines.append(f"└─ ⚠️ {near.get('reason', 'Unavailable')}")
-
-        lines.append("")
-        lines.append("Both layers provide hardware-backed attestation.")
-        lines.append("Your messages never exist in plaintext outside TEEs.")
-
-        return "\n".join(lines)
+        }
+    }
+}
 ```
 
-### 4.4 Clear Command
+### 5.2 Tasks for Phase 3
 
-**File: `bot/commands/clear.py`**
+| Task | Description | Files |
+|------|-------------|-------|
+| 3.1 | Create signal-client crate | `crates/signal-client/` |
+| 3.2 | Implement message types | `types.rs` |
+| 3.3 | Implement HTTP client | `client.rs` |
+| 3.4 | Implement message receiver | `receiver.rs` |
+| 3.5 | Write integration tests | `tests/` |
 
-```python
-"""Clear command - resets conversation history."""
+---
 
-from signalbot import Context
+## 6. Phase 4: Bot Commands
 
-from bot.commands.base import BaseCommand
-from bot.conversation import ConversationStore
-from bot.utils.logging import get_logger
+**Goal**: Implement command handlers and message routing.
 
-logger = get_logger(__name__)
+### 6.1 Commands Module
 
+**File: `crates/signal-bot/src/commands/mod.rs`**
 
-class ClearCommand(BaseCommand):
-    """Clears conversation history for the user."""
+```rust
+//! Bot command handlers.
 
-    def __init__(self, conversations: ConversationStore):
-        self.conversations = conversations
+mod chat;
+mod clear;
+mod help;
+mod models;
+mod verify;
 
-    @property
-    def name(self) -> str:
-        return "clear"
+pub use chat::ChatHandler;
+pub use clear::ClearHandler;
+pub use help::HelpHandler;
+pub use models::ModelsHandler;
+pub use verify::VerifyHandler;
 
-    @property
-    def description(self) -> str:
-        return "Clear conversation history"
+use crate::error::AppResult;
+use async_trait::async_trait;
+use signal_client::BotMessage;
 
-    async def execute(self, ctx: Context, user_id: str, message: str) -> None:
-        """Clear the user's conversation history."""
-        try:
-            cleared = await self.conversations.clear(user_id)
+/// Command handler trait.
+#[async_trait]
+pub trait CommandHandler: Send + Sync {
+    /// Command name (e.g., "help", "clear").
+    fn name(&self) -> &str;
 
-            if cleared:
-                await ctx.send("✅ Conversation history cleared.")
-                logger.info(f"Cleared history for {user_id[:8]}...")
-            else:
-                await ctx.send("No conversation history to clear.")
+    /// Command trigger (e.g., "!help").
+    fn trigger(&self) -> Option<&str> {
+        None
+    }
 
-        except Exception as e:
-            logger.error(f"Clear error for {user_id[:8]}...: {e}")
-            await self.send_error(ctx, "Could not clear history. Please try again.")
+    /// Whether this is the default handler for non-command messages.
+    fn is_default(&self) -> bool {
+        false
+    }
+
+    /// Check if this handler matches the message.
+    fn matches(&self, message: &BotMessage) -> bool {
+        if let Some(trigger) = self.trigger() {
+            message.text.starts_with(trigger)
+        } else {
+            self.is_default() && !message.text.starts_with('!')
+        }
+    }
+
+    /// Execute the command.
+    async fn execute(&self, message: &BotMessage) -> AppResult<String>;
+}
 ```
 
-### 4.5 Help Command
+### 6.2 Chat Handler
 
-**File: `bot/commands/help.py`**
+**File: `crates/signal-bot/src/commands/chat.rs`**
 
-```python
-"""Help command - displays available commands."""
+```rust
+//! Chat command - proxies messages to NEAR AI.
 
-from signalbot import Context
+use crate::commands::CommandHandler;
+use crate::error::{AppError, AppResult};
+use async_trait::async_trait;
+use conversation_store::ConversationStore;
+use near_ai_client::{Message, NearAiClient, NearAiError};
+use signal_client::BotMessage;
+use std::sync::Arc;
+use tracing::{error, info, instrument};
 
-from bot.commands.base import BaseCommand
+pub struct ChatHandler {
+    near_ai: Arc<NearAiClient>,
+    conversations: Arc<ConversationStore>,
+    system_prompt: String,
+}
 
+impl ChatHandler {
+    pub fn new(
+        near_ai: Arc<NearAiClient>,
+        conversations: Arc<ConversationStore>,
+        system_prompt: String,
+    ) -> Self {
+        Self {
+            near_ai,
+            conversations,
+            system_prompt,
+        }
+    }
+}
 
-class HelpCommand(BaseCommand):
-    """Displays available commands and usage information."""
+#[async_trait]
+impl CommandHandler for ChatHandler {
+    fn name(&self) -> &str {
+        "chat"
+    }
 
-    @property
-    def name(self) -> str:
-        return "help"
+    fn is_default(&self) -> bool {
+        true
+    }
 
-    @property
-    def description(self) -> str:
-        return "Show available commands"
+    #[instrument(skip(self, message), fields(user = %message.source))]
+    async fn execute(&self, message: &BotMessage) -> AppResult<String> {
+        let user_id = &message.source;
 
-    async def execute(self, ctx: Context, user_id: str, message: str) -> None:
-        """Send help information."""
-        help_text = """🤖 **Signal AI** (Private & Verifiable)
+        info!(
+            "Chat from {}: {}...",
+            &user_id[..user_id.len().min(8)],
+            &message.text[..message.text.len().min(50)]
+        );
+
+        // Add user message to history
+        self.conversations
+            .add_message(user_id, "user", &message.text, Some(&self.system_prompt))
+            .await?;
+
+        // Get full conversation for context
+        let stored_messages = self
+            .conversations
+            .to_openai_messages(user_id, Some(&self.system_prompt))
+            .await?;
+
+        // Convert to NEAR AI message format
+        let messages: Vec<Message> = stored_messages
+            .into_iter()
+            .map(|m| Message {
+                role: match m.role.as_str() {
+                    "system" => near_ai_client::Role::System,
+                    "assistant" => near_ai_client::Role::Assistant,
+                    _ => near_ai_client::Role::User,
+                },
+                content: m.content,
+            })
+            .collect();
+
+        // Query NEAR AI
+        let response = match self.near_ai.chat(messages, Some(0.7), None).await {
+            Ok(r) => r,
+            Err(NearAiError::RateLimit) => {
+                return Ok(
+                    "⏳ I'm receiving too many requests. Please wait a moment and try again."
+                        .into(),
+                );
+            }
+            Err(e) => {
+                error!("NEAR AI error: {}", e);
+                return Ok(
+                    "Sorry, I encountered an error connecting to the AI service. Please try again."
+                        .into(),
+                );
+            }
+        };
+
+        // Store assistant response
+        self.conversations
+            .add_message(user_id, "assistant", &response, None)
+            .await?;
+
+        info!(
+            "Response to {}: {} chars",
+            &user_id[..user_id.len().min(8)],
+            response.len()
+        );
+
+        Ok(response)
+    }
+}
+```
+
+### 6.3 Verify Handler
+
+**File: `crates/signal-bot/src/commands/verify.rs`**
+
+```rust
+//! Verify command - provides attestation proofs.
+
+use crate::commands::CommandHandler;
+use crate::error::AppResult;
+use async_trait::async_trait;
+use dstack_client::DstackClient;
+use near_ai_client::NearAiClient;
+use sha2::{Digest, Sha256};
+use signal_client::BotMessage;
+use std::sync::Arc;
+use tracing::{info, warn};
+
+pub struct VerifyHandler {
+    near_ai: Arc<NearAiClient>,
+    dstack: Arc<DstackClient>,
+}
+
+impl VerifyHandler {
+    pub fn new(near_ai: Arc<NearAiClient>, dstack: Arc<DstackClient>) -> Self {
+        Self { near_ai, dstack }
+    }
+
+    async fn get_proxy_info(&self, challenge: &[u8]) -> ProxyInfo {
+        if !self.dstack.is_in_tee().await {
+            return ProxyInfo {
+                available: false,
+                reason: Some("Not running in TEE environment".into()),
+                ..Default::default()
+            };
+        }
+
+        match self.dstack.get_app_info().await {
+            Ok(info) => {
+                let quote_ok = self.dstack.get_quote(challenge).await.is_ok();
+                ProxyInfo {
+                    available: true,
+                    compose_hash: info.compose_hash,
+                    app_id: info.app_id,
+                    quote_generated: quote_ok,
+                    reason: None,
+                }
+            }
+            Err(e) => ProxyInfo {
+                available: false,
+                reason: Some(e.to_string()),
+                ..Default::default()
+            },
+        }
+    }
+
+    async fn get_near_info(&self) -> NearInfo {
+        match self.near_ai.get_attestation().await {
+            Ok(_attestation) => NearInfo {
+                available: true,
+                model: self.near_ai.model().to_string(),
+                reason: None,
+            },
+            Err(e) => NearInfo {
+                available: false,
+                model: self.near_ai.model().to_string(),
+                reason: Some(e.to_string()),
+            },
+        }
+    }
+
+    fn format_response(&self, proxy: ProxyInfo, near: NearInfo) -> String {
+        let mut lines = vec!["🔐 **Privacy Verification**".to_string(), String::new()];
+
+        // Proxy section
+        lines.push("**Proxy (Signal Bot)**".into());
+        if proxy.available {
+            lines.push("├─ TEE: Intel TDX".into());
+            if let Some(hash) = &proxy.compose_hash {
+                lines.push(format!("├─ Compose Hash: {}...", &hash[..hash.len().min(16)]));
+            }
+            if let Some(id) = &proxy.app_id {
+                lines.push(format!("├─ App ID: {}...", &id[..id.len().min(16)]));
+            }
+            lines.push("└─ Verify: https://proof.phala.network".into());
+        } else {
+            lines.push(format!(
+                "└─ ⚠️ {}",
+                proxy.reason.unwrap_or("Unavailable".into())
+            ));
+        }
+
+        lines.push(String::new());
+
+        // Inference section
+        lines.push("**Inference (NEAR AI Cloud)**".into());
+        if near.available {
+            lines.push("├─ TEE: NVIDIA GPU (H100/H200)".into());
+            lines.push(format!("├─ Model: {}", near.model));
+            lines.push("├─ Gateway: Intel TDX".into());
+            lines.push("└─ Verify: https://near.ai/verify".into());
+        } else {
+            lines.push(format!("├─ Model: {}", near.model));
+            lines.push(format!(
+                "└─ ⚠️ {}",
+                near.reason.unwrap_or("Unavailable".into())
+            ));
+        }
+
+        lines.push(String::new());
+        lines.push("Both layers provide hardware-backed attestation.".into());
+        lines.push("Your messages never exist in plaintext outside TEEs.".into());
+
+        lines.join("\n")
+    }
+}
+
+#[derive(Default)]
+struct ProxyInfo {
+    available: bool,
+    compose_hash: Option<String>,
+    app_id: Option<String>,
+    quote_generated: bool,
+    reason: Option<String>,
+}
+
+struct NearInfo {
+    available: bool,
+    model: String,
+    reason: Option<String>,
+}
+
+#[async_trait]
+impl CommandHandler for VerifyHandler {
+    fn name(&self) -> &str {
+        "verify"
+    }
+
+    fn trigger(&self) -> Option<&str> {
+        Some("!verify")
+    }
+
+    async fn execute(&self, message: &BotMessage) -> AppResult<String> {
+        info!("Attestation requested by {}", message.source);
+
+        // Generate challenge
+        let mut hasher = Sha256::new();
+        hasher.update(message.timestamp.to_string().as_bytes());
+        hasher.update(message.source.as_bytes());
+        let challenge = hasher.finalize();
+
+        let proxy = self.get_proxy_info(&challenge).await;
+        let near = self.get_near_info().await;
+
+        Ok(self.format_response(proxy, near))
+    }
+}
+```
+
+### 6.4 Other Commands
+
+**File: `crates/signal-bot/src/commands/clear.rs`**
+
+```rust
+//! Clear command - resets conversation history.
+
+use crate::commands::CommandHandler;
+use crate::error::AppResult;
+use async_trait::async_trait;
+use conversation_store::ConversationStore;
+use signal_client::BotMessage;
+use std::sync::Arc;
+use tracing::info;
+
+pub struct ClearHandler {
+    conversations: Arc<ConversationStore>,
+}
+
+impl ClearHandler {
+    pub fn new(conversations: Arc<ConversationStore>) -> Self {
+        Self { conversations }
+    }
+}
+
+#[async_trait]
+impl CommandHandler for ClearHandler {
+    fn name(&self) -> &str {
+        "clear"
+    }
+
+    fn trigger(&self) -> Option<&str> {
+        Some("!clear")
+    }
+
+    async fn execute(&self, message: &BotMessage) -> AppResult<String> {
+        let cleared = self.conversations.clear(&message.source).await?;
+
+        if cleared {
+            info!("Cleared history for {}", &message.source[..8.min(message.source.len())]);
+            Ok("✅ Conversation history cleared.".into())
+        } else {
+            Ok("No conversation history to clear.".into())
+        }
+    }
+}
+```
+
+**File: `crates/signal-bot/src/commands/help.rs`**
+
+```rust
+//! Help command - displays available commands.
+
+use crate::commands::CommandHandler;
+use crate::error::AppResult;
+use async_trait::async_trait;
+use signal_client::BotMessage;
+
+pub struct HelpHandler;
+
+impl HelpHandler {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+#[async_trait]
+impl CommandHandler for HelpHandler {
+    fn name(&self) -> &str {
+        "help"
+    }
+
+    fn trigger(&self) -> Option<&str> {
+        Some("!help")
+    }
+
+    async fn execute(&self, _message: &BotMessage) -> AppResult<String> {
+        Ok(r#"🤖 **Signal AI** (Private & Verifiable)
 
 Just send a message to chat with AI.
 
@@ -1372,536 +2315,312 @@ Just send a message to chat with AI.
 **Privacy:**
 Your messages are end-to-end encrypted via Signal, processed in a verified TEE (Intel TDX), and sent to NEAR AI Cloud's private inference (NVIDIA GPU TEE).
 
-Neither the bot operator nor NEAR AI can read your messages."""
-
-        await ctx.send(help_text)
+Neither the bot operator nor NEAR AI can read your messages."#
+            .into())
+    }
+}
 ```
 
-### 4.6 Models Command
-
-**File: `bot/commands/models.py`**
-
-```python
-"""Models command - lists available AI models."""
-
-from signalbot import Context
-
-from bot.commands.base import BaseCommand
-from bot.near_ai_client import NearAIClient
-from bot.utils.errors import NearAIError
-from bot.utils.logging import get_logger
-
-logger = get_logger(__name__)
-
-
-class ModelsCommand(BaseCommand):
-    """Lists available models on NEAR AI Cloud."""
-
-    def __init__(self, near_ai: NearAIClient):
-        self.near_ai = near_ai
-
-    @property
-    def name(self) -> str:
-        return "models"
-
-    @property
-    def description(self) -> str:
-        return "List available AI models"
-
-    async def execute(self, ctx: Context, user_id: str, message: str) -> None:
-        """List available models."""
-        try:
-            models = await self.near_ai.get_models()
-
-            # Format model list (limit to 10)
-            model_list = "\n".join([f"• {m['id']}" for m in models[:10]])
-            current = f"\n\n_Current: {self.near_ai.model}_"
-
-            await ctx.send(f"**Available Models:**\n{model_list}{current}")
-
-        except NearAIError as e:
-            logger.error(f"Models list error: {e}")
-            await self.send_error(ctx, "Could not fetch model list.")
-```
-
-### 4.7 Main Entry Point
-
-**File: `bot/main.py`**
-
-```python
-"""Signal AI Proxy Bot entry point."""
-
-import asyncio
-import signal
-from signalbot import SignalBot, Command, Context
-
-from bot.config import get_settings, Settings
-from bot.near_ai_client import NearAIClient
-from bot.conversation import ConversationStore
-from bot.dstack_client import DstackClient
-from bot.commands.chat import ChatCommand
-from bot.commands.verify import VerifyCommand
-from bot.commands.clear import ClearCommand
-from bot.commands.help import HelpCommand
-from bot.commands.models import ModelsCommand
-from bot.utils.logging import setup_logging, get_logger
-
-logger = get_logger(__name__)
-
-
-class SignalAIBot:
-    """
-    Main bot application orchestrating all components.
-
-    Lifecycle:
-    1. Initialize configuration and clients
-    2. Connect to Redis
-    3. Register Signal commands
-    4. Start message processing
-    5. Handle graceful shutdown
-    """
-
-    def __init__(self, settings: Settings):
-        self.settings = settings
-
-        # Initialize clients
-        self.near_ai = NearAIClient(
-            api_key=settings.near_ai_api_key,
-            base_url=settings.near_ai_base_url,
-            model=settings.near_ai_model,
-            timeout=settings.near_ai_timeout
-        )
-
-        self.conversations = ConversationStore(
-            redis_url=settings.redis_url,
-            max_messages=settings.max_conversation_messages,
-            ttl_hours=settings.redis_ttl_hours
-        )
-
-        self.dstack = DstackClient(socket_path=settings.dstack_socket)
-
-        # Signal bot will be initialized in start()
-        self._bot: SignalBot = None
-        self._shutdown_event = asyncio.Event()
-
-    def _create_signal_command(self, cmd) -> Command:
-        """Wrap our command in signalbot's Command class."""
-        parent = self
-
-        class WrappedCommand(Command):
-            def describe(self) -> str:
-                return cmd.description
-
-            async def handle(self, ctx: Context) -> None:
-                user_id = ctx.message.source
-                message = ctx.message.text or ""
-                await cmd.execute(ctx, user_id, message)
-
-        # Apply trigger decorator if not default
-        if cmd.trigger and not cmd.is_default:
-            from signalbot import triggered
-            WrappedCommand.handle = triggered(cmd.trigger)(WrappedCommand.handle)
-
-        return WrappedCommand()
-
-    async def start(self) -> None:
-        """Start the bot and begin processing messages."""
-        logger.info("Starting Signal AI Proxy Bot...")
-
-        # Connect to Redis
-        await self.conversations.connect()
-        logger.info("Connected to Redis")
-
-        # Check NEAR AI health
-        if await self.near_ai.health_check():
-            logger.info(f"NEAR AI healthy - Model: {self.settings.near_ai_model}")
-        else:
-            logger.warning("NEAR AI health check failed - will retry on requests")
-
-        # Check TEE environment
-        if await self.dstack.is_in_tee():
-            app_info = await self.dstack.get_app_info()
-            logger.info(f"Running in TEE - App ID: {app_info.get('app_id', 'unknown')}")
-        else:
-            logger.warning("Not running in TEE environment - attestation unavailable")
-
-        # Initialize Signal bot
-        self._bot = SignalBot({
-            "signal_service": self.settings.signal_service,
-            "phone_number": self.settings.signal_phone
-        })
-
-        # Create and register commands
-        commands = [
-            ChatCommand(self.near_ai, self.conversations, self.settings.system_prompt),
-            VerifyCommand(self.near_ai, self.dstack),
-            ClearCommand(self.conversations),
-            HelpCommand(),
-            ModelsCommand(self.near_ai)
-        ]
-
-        for cmd in commands:
-            wrapped = self._create_signal_command(cmd)
-            self._bot.register(wrapped)
-            logger.debug(f"Registered command: {cmd.name}")
-
-        logger.info(f"Signal service: {self.settings.signal_service}")
-        logger.info(f"NEAR AI endpoint: {self.settings.near_ai_base_url}")
-        logger.info("Bot started - listening for messages...")
-
-        # Start the bot (this blocks)
-        self._bot.start()
-
-    async def stop(self) -> None:
-        """Gracefully stop the bot."""
-        logger.info("Shutting down...")
-
-        if self._bot:
-            # Signal bot doesn't have async stop, this is best effort
-            pass
-
-        await self.conversations.disconnect()
-        logger.info("Disconnected from Redis")
-
-        self._shutdown_event.set()
-
-
-def setup_signal_handlers(bot: SignalAIBot) -> None:
-    """Setup graceful shutdown handlers."""
-    loop = asyncio.get_event_loop()
-
-    for sig in (signal.SIGTERM, signal.SIGINT):
-        loop.add_signal_handler(
-            sig,
-            lambda: asyncio.create_task(bot.stop())
-        )
-
-
-async def main() -> None:
-    """Main entry point."""
-    # Load configuration
-    settings = get_settings()
-
-    # Setup logging
-    setup_logging(settings.log_level)
-
-    # Create and start bot
-    bot = SignalAIBot(settings)
-    setup_signal_handlers(bot)
-
-    try:
-        await bot.start()
-    except KeyboardInterrupt:
-        logger.info("Received interrupt signal")
-    finally:
-        await bot.stop()
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
-```
-
-### 4.8 Tasks for Phase 3
-
-| Task | Description | Files |
-|------|-------------|-------|
-| 3.1 | Create base command class | `bot/commands/base.py` |
-| 3.2 | Implement chat command | `bot/commands/chat.py` |
-| 3.3 | Implement verify command | `bot/commands/verify.py` |
-| 3.4 | Implement clear command | `bot/commands/clear.py` |
-| 3.5 | Implement help command | `bot/commands/help.py` |
-| 3.6 | Implement models command | `bot/commands/models.py` |
-| 3.7 | Create main entry point | `bot/main.py` |
-| 3.8 | Add graceful shutdown | `bot/main.py` |
-| 3.9 | Write command unit tests | `tests/test_commands/` |
-
----
-
-## 5. Phase 4: TEE Integration
-
-**Goal**: Ensure proper integration with Dstack TEE and implement verification utilities.
-
-### 5.1 TEE Verification Script
-
-**File: `scripts/verify_tee.py`**
-
-```python
-#!/usr/bin/env python3
-"""Manual TEE verification utility."""
-
-import asyncio
-import sys
-import json
-import hashlib
-import base64
-
-from bot.dstack_client import DstackClient
-from bot.near_ai_client import NearAIClient
-
-
-async def verify_proxy_tee():
-    """Verify proxy TEE attestation."""
-    print("=" * 60)
-    print("PROXY TEE VERIFICATION (Intel TDX)")
-    print("=" * 60)
-
-    dstack = DstackClient()
-
-    if not await dstack.is_in_tee():
-        print("❌ Not running in TEE environment")
-        return False
-
-    print("✅ Running in TEE environment")
-
-    # Get app info
-    app_info = await dstack.get_app_info()
-    print(f"\n📋 Application Info:")
-    print(f"   App ID: {app_info.get('app_id', 'N/A')}")
-    print(f"   Compose Hash: {app_info.get('compose_hash', 'N/A')}")
-    print(f"   Instance ID: {app_info.get('instance_id', 'N/A')}")
-
-    # Generate quote
-    challenge = hashlib.sha256(b"verification-test").digest()
-    quote = await dstack.get_quote(challenge)
-    print(f"\n🔐 TDX Quote Generated:")
-    print(f"   Quote length: {len(quote.get('quote', ''))} chars")
-    print(f"   Report data included: {bool(quote.get('report_data'))}")
-
-    return True
-
-
-async def verify_near_ai_tee(api_key: str):
-    """Verify NEAR AI TEE attestation."""
-    print("\n" + "=" * 60)
-    print("NEAR AI TEE VERIFICATION (NVIDIA GPU)")
-    print("=" * 60)
-
-    client = NearAIClient(api_key=api_key)
-
-    # Health check
-    if not await client.health_check():
-        print("❌ NEAR AI not reachable")
-        return False
-
-    print("✅ NEAR AI Cloud reachable")
-
-    # Get attestation
-    try:
-        attestation = await client.get_attestation()
-        print(f"\n🔐 GPU TEE Attestation:")
-        print(json.dumps(attestation, indent=2))
-        return True
-    except Exception as e:
-        print(f"⚠️ Attestation endpoint: {e}")
-        return True  # Endpoint may not be exposed publicly
-
-
-async def main():
-    """Run verification checks."""
-    print("\n🔍 TEE VERIFICATION UTILITY\n")
-
-    proxy_ok = await verify_proxy_tee()
-
-    # NEAR AI requires API key
-    api_key = input("\nEnter NEAR AI API key (or press Enter to skip): ").strip()
-    near_ok = True
-    if api_key:
-        near_ok = await verify_near_ai_tee(api_key)
-    else:
-        print("\n⏭️ Skipping NEAR AI verification")
-
-    print("\n" + "=" * 60)
-    print("VERIFICATION SUMMARY")
-    print("=" * 60)
-    print(f"Proxy TEE: {'✅ PASSED' if proxy_ok else '❌ FAILED'}")
-    print(f"NEAR AI TEE: {'✅ PASSED' if near_ok else '❌ FAILED'}")
-
-    return 0 if (proxy_ok and near_ok) else 1
-
-
-if __name__ == "__main__":
-    sys.exit(asyncio.run(main()))
-```
-
-### 5.2 Health Check Script
-
-**File: `scripts/health_check.py`**
-
-```python
-#!/usr/bin/env python3
-"""Health monitoring script for the bot."""
-
-import asyncio
-import sys
-import httpx
-import redis.asyncio as redis
-
-
-async def check_signal_api(url: str) -> bool:
-    """Check Signal CLI REST API health."""
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(f"{url}/v1/health")
-            return resp.status_code == 200
-    except Exception:
-        return False
-
-
-async def check_redis(url: str) -> bool:
-    """Check Redis connectivity."""
-    try:
-        r = redis.from_url(url)
-        await r.ping()
-        await r.close()
-        return True
-    except Exception:
-        return False
-
-
-async def check_near_ai(base_url: str, api_key: str) -> bool:
-    """Check NEAR AI API connectivity."""
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(
-                f"{base_url}/models",
-                headers={"Authorization": f"Bearer {api_key}"}
-            )
-            return resp.status_code == 200
-    except Exception:
-        return False
-
-
-async def main():
-    """Run health checks."""
-    import os
-
-    signal_url = os.environ.get("SIGNAL_SERVICE", "http://localhost:8080")
-    redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379")
-    near_url = os.environ.get("NEAR_AI_BASE_URL", "https://api.near.ai/v1")
-    near_key = os.environ.get("NEAR_AI_API_KEY", "")
-
-    results = {
-        "signal_api": await check_signal_api(signal_url),
-        "redis": await check_redis(redis_url),
-        "near_ai": await check_near_ai(near_url, near_key) if near_key else None
+**File: `crates/signal-bot/src/commands/models.rs`**
+
+```rust
+//! Models command - lists available AI models.
+
+use crate::commands::CommandHandler;
+use crate::error::AppResult;
+use async_trait::async_trait;
+use near_ai_client::NearAiClient;
+use signal_client::BotMessage;
+use std::sync::Arc;
+use tracing::error;
+
+pub struct ModelsHandler {
+    near_ai: Arc<NearAiClient>,
+}
+
+impl ModelsHandler {
+    pub fn new(near_ai: Arc<NearAiClient>) -> Self {
+        Self { near_ai }
+    }
+}
+
+#[async_trait]
+impl CommandHandler for ModelsHandler {
+    fn name(&self) -> &str {
+        "models"
     }
 
-    print("Health Check Results:")
-    for service, healthy in results.items():
-        if healthy is None:
-            status = "⏭️ SKIPPED"
-        elif healthy:
-            status = "✅ HEALTHY"
-        else:
-            status = "❌ UNHEALTHY"
-        print(f"  {service}: {status}")
+    fn trigger(&self) -> Option<&str> {
+        Some("!models")
+    }
 
-    # Exit with error if any required service is unhealthy
-    required = ["signal_api", "redis"]
-    if all(results.get(s) for s in required):
-        return 0
-    return 1
+    async fn execute(&self, _message: &BotMessage) -> AppResult<String> {
+        match self.near_ai.list_models().await {
+            Ok(models) => {
+                let model_list: String = models
+                    .iter()
+                    .take(10)
+                    .map(|m| format!("• {}", m.id))
+                    .collect::<Vec<_>>()
+                    .join("\n");
 
-
-if __name__ == "__main__":
-    sys.exit(asyncio.run(main()))
+                Ok(format!(
+                    "**Available Models:**\n{}\n\n_Current: {}_",
+                    model_list,
+                    self.near_ai.model()
+                ))
+            }
+            Err(e) => {
+                error!("Failed to list models: {}", e);
+                Ok("❌ Could not fetch model list.".into())
+            }
+        }
+    }
+}
 ```
 
-### 5.3 Tasks for Phase 4
+### 6.5 Tasks for Phase 4
 
 | Task | Description | Files |
 |------|-------------|-------|
-| 4.1 | Create TEE verification script | `scripts/verify_tee.py` |
-| 4.2 | Create health check script | `scripts/health_check.py` |
-| 4.3 | Test key derivation | Manual testing |
-| 4.4 | Test quote generation | Manual testing |
-| 4.5 | Document TEE verification steps | `README.md` |
+| 4.1 | Create commands module | `commands/mod.rs` |
+| 4.2 | Implement ChatHandler | `commands/chat.rs` |
+| 4.3 | Implement VerifyHandler | `commands/verify.rs` |
+| 4.4 | Implement ClearHandler | `commands/clear.rs` |
+| 4.5 | Implement HelpHandler | `commands/help.rs` |
+| 4.6 | Implement ModelsHandler | `commands/models.rs` |
+| 4.7 | Write command tests | `tests/` |
 
 ---
 
-## 6. Phase 5: Docker & Deployment
+## 7. Phase 5: TEE Integration
 
-**Goal**: Create production-ready Docker configuration and deployment scripts.
+**Goal**: Main application entry point and TEE verification.
 
-### 6.1 Production Dockerfile
+### 7.1 Main Entry Point
+
+**File: `crates/signal-bot/src/main.rs`**
+
+```rust
+//! Signal AI Proxy Bot - Main entry point.
+
+mod commands;
+mod config;
+mod error;
+
+use crate::commands::*;
+use crate::config::Config;
+use crate::error::AppResult;
+use anyhow::Context;
+use conversation_store::ConversationStore;
+use dstack_client::DstackClient;
+use near_ai_client::NearAiClient;
+use signal_client::{MessageReceiver, SignalClient};
+use std::sync::Arc;
+use tokio::signal;
+use tokio_stream::StreamExt;
+use tracing::{error, info, warn};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+
+#[tokio::main]
+async fn main() -> AppResult<()> {
+    // Load configuration
+    let config = Config::load().context("Failed to load configuration")?;
+
+    // Initialize logging
+    init_logging(&config.bot.log_level);
+
+    info!("Starting Signal AI Proxy Bot...");
+
+    // Initialize clients
+    let near_ai = Arc::new(
+        NearAiClient::new(
+            &config.near_ai.api_key,
+            &config.near_ai.base_url,
+            &config.near_ai.model,
+            config.near_ai.timeout,
+        )
+        .context("Failed to create NEAR AI client")?,
+    );
+
+    let conversations = Arc::new(
+        ConversationStore::new(
+            &config.redis.url,
+            config.redis.max_messages,
+            config.redis.ttl,
+        )
+        .await
+        .context("Failed to connect to Redis")?,
+    );
+
+    let dstack = Arc::new(DstackClient::new(&config.dstack.socket_path));
+
+    let signal = SignalClient::new(&config.signal.service_url, &config.signal.phone_number)
+        .context("Failed to create Signal client")?;
+
+    // Health checks
+    if near_ai.health_check().await {
+        info!("NEAR AI healthy - Model: {}", config.near_ai.model);
+    } else {
+        warn!("NEAR AI health check failed - will retry on requests");
+    }
+
+    if dstack.is_in_tee().await {
+        if let Ok(info) = dstack.get_app_info().await {
+            info!(
+                "Running in TEE - App ID: {}",
+                info.app_id.as_deref().unwrap_or("unknown")
+            );
+        }
+    } else {
+        warn!("Not running in TEE environment - attestation unavailable");
+    }
+
+    if !signal.health_check().await {
+        error!("Signal API not reachable at {}", config.signal.service_url);
+        return Err(anyhow::anyhow!("Signal API not reachable").into());
+    }
+    info!("Signal API healthy");
+
+    // Create command handlers
+    let handlers: Vec<Box<dyn CommandHandler>> = vec![
+        Box::new(ChatHandler::new(
+            near_ai.clone(),
+            conversations.clone(),
+            config.bot.system_prompt.clone(),
+        )),
+        Box::new(VerifyHandler::new(near_ai.clone(), dstack.clone())),
+        Box::new(ClearHandler::new(conversations.clone())),
+        Box::new(HelpHandler::new()),
+        Box::new(ModelsHandler::new(near_ai.clone())),
+    ];
+
+    info!("Registered {} command handlers", handlers.len());
+    info!("NEAR AI endpoint: {}", config.near_ai.base_url);
+    info!("Listening for messages...");
+
+    // Start message receiver
+    let receiver = MessageReceiver::new(signal.clone(), config.signal.poll_interval);
+    let mut stream = Box::pin(receiver.stream());
+
+    // Main message loop
+    loop {
+        tokio::select! {
+            Some(message) = stream.next() => {
+                // Find matching handler
+                let handler = handlers
+                    .iter()
+                    .find(|h| h.matches(&message));
+
+                if let Some(handler) = handler {
+                    match handler.execute(&message).await {
+                        Ok(response) => {
+                            if let Err(e) = signal.reply(&message, &response).await {
+                                error!("Failed to send reply: {}", e);
+                            }
+                        }
+                        Err(e) => {
+                            error!("Handler error: {}", e);
+                            let _ = signal
+                                .reply(&message, "Sorry, something went wrong.")
+                                .await;
+                        }
+                    }
+                }
+            }
+            _ = signal::ctrl_c() => {
+                info!("Shutdown signal received");
+                break;
+            }
+        }
+    }
+
+    info!("Shutting down...");
+    Ok(())
+}
+
+fn init_logging(level: &str) {
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new(level));
+
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+}
+```
+
+### 7.2 Tasks for Phase 5
+
+| Task | Description | Files |
+|------|-------------|-------|
+| 5.1 | Implement main entry point | `main.rs` |
+| 5.2 | Add graceful shutdown | `main.rs` |
+| 5.3 | Add health checks | `main.rs` |
+| 5.4 | Test locally | Manual |
+| 5.5 | Test in TEE | Manual |
+
+---
+
+## 8. Phase 6: Docker & Deployment
+
+**Goal**: Production-ready container and deployment configuration.
+
+### 8.1 Production Dockerfile
 
 **File: `docker/Dockerfile`**
 
 ```dockerfile
 # Build stage
-FROM python:3.11-slim as builder
+FROM rust:1.75-alpine AS builder
 
-WORKDIR /build
-
-# Install build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements
-COPY requirements.txt .
-
-# Install dependencies
-RUN pip install --no-cache-dir --user -r requirements.txt
-
-# Production stage
-FROM python:3.11-slim
+RUN apk add --no-cache musl-dev openssl-dev openssl-libs-static
 
 WORKDIR /app
 
-# Create non-root user
-RUN useradd --create-home --shell /bin/bash botuser
+# Cache dependencies
+COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+COPY crates/signal-bot/Cargo.toml crates/signal-bot/
+COPY crates/near-ai-client/Cargo.toml crates/near-ai-client/
+COPY crates/conversation-store/Cargo.toml crates/conversation-store/
+COPY crates/dstack-client/Cargo.toml crates/dstack-client/
+COPY crates/signal-client/Cargo.toml crates/signal-client/
 
-# Copy installed packages from builder
-COPY --from=builder /root/.local /home/botuser/.local
-ENV PATH=/home/botuser/.local/bin:$PATH
+# Create dummy source files for dependency caching
+RUN mkdir -p crates/signal-bot/src && echo "fn main() {}" > crates/signal-bot/src/main.rs
+RUN mkdir -p crates/near-ai-client/src && echo "" > crates/near-ai-client/src/lib.rs
+RUN mkdir -p crates/conversation-store/src && echo "" > crates/conversation-store/src/lib.rs
+RUN mkdir -p crates/dstack-client/src && echo "" > crates/dstack-client/src/lib.rs
+RUN mkdir -p crates/signal-client/src && echo "" > crates/signal-client/src/lib.rs
 
-# Copy application code
-COPY bot/ ./bot/
-COPY scripts/ ./scripts/
+# Build dependencies only
+RUN cargo build --release --target x86_64-unknown-linux-musl 2>/dev/null || true
 
-# Change ownership
-RUN chown -R botuser:botuser /app
+# Copy actual source
+COPY crates crates
 
-USER botuser
+# Touch source files to trigger rebuild
+RUN find crates -name "*.rs" -exec touch {} \;
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD python scripts/health_check.py || exit 1
+# Build release binary
+RUN cargo build --release --target x86_64-unknown-linux-musl --bin signal-bot
 
-# Entry point
-CMD ["python", "-m", "bot.main"]
+# Runtime stage
+FROM scratch
+
+# Copy CA certificates for HTTPS
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+
+# Copy binary
+COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/signal-bot /signal-bot
+
+# Non-root user (UID 1000)
+USER 1000
+
+ENTRYPOINT ["/signal-bot"]
 ```
 
-### 6.2 Development Dockerfile
-
-**File: `docker/Dockerfile.dev`**
-
-```dockerfile
-FROM python:3.11-slim
-
-WORKDIR /app
-
-# Install dev dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements
-COPY requirements.txt requirements-dev.txt ./
-
-# Install all dependencies
-RUN pip install --no-cache-dir -r requirements.txt -r requirements-dev.txt
-
-# Copy application
-COPY . .
-
-# Development mode
-CMD ["python", "-m", "pytest", "-v", "--cov=bot"]
-```
-
-### 6.3 Docker Compose
+### 8.2 Docker Compose
 
 **File: `docker/docker-compose.yaml`**
 
@@ -1929,19 +2648,20 @@ services:
       start_period: 30s
     restart: unless-stopped
 
-  ai-proxy-bot:
+  signal-bot:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    container_name: ai-proxy-bot
+    container_name: signal-bot
     environment:
-      - SIGNAL_SERVICE=http://signal-api:8080
-      - SIGNAL_PHONE=${SIGNAL_PHONE}
-      - NEAR_AI_API_KEY=${NEAR_AI_API_KEY}
-      - NEAR_AI_BASE_URL=${NEAR_AI_BASE_URL:-https://api.near.ai/v1}
-      - NEAR_AI_MODEL=${NEAR_AI_MODEL:-llama-3.3-70b}
-      - REDIS_URL=redis://redis:6379
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - SIGNAL__SERVICE_URL=http://signal-api:8080
+      - SIGNAL__PHONE_NUMBER=${SIGNAL_PHONE}
+      - NEAR_AI__API_KEY=${NEAR_AI_API_KEY}
+      - NEAR_AI__BASE_URL=${NEAR_AI_BASE_URL:-https://api.near.ai/v1}
+      - NEAR_AI__MODEL=${NEAR_AI_MODEL:-llama-3.3-70b}
+      - REDIS__URL=redis://redis:6379
+      - BOT__LOG_LEVEL=${LOG_LEVEL:-info}
+      - DSTACK__SOCKET_PATH=/var/run/dstack.sock
     volumes:
       - /var/run/dstack.sock:/var/run/dstack.sock:ro
     depends_on:
@@ -1975,733 +2695,163 @@ networks:
     name: signal-bot-network
 ```
 
-### 6.4 Setup Scripts
-
-**File: `scripts/setup_signal.sh`**
-
-```bash
-#!/bin/bash
-set -euo pipefail
-
-# Signal account setup script
-# Run this after deploying to link a Signal account
-
-SIGNAL_API="${SIGNAL_SERVICE:-http://localhost:8080}"
-DEVICE_NAME="${DEVICE_NAME:-signal-ai-bot}"
-
-echo "🔗 Signal Account Linking"
-echo "========================="
-echo ""
-echo "This will generate a QR code to link your Signal account."
-echo "Scan it with Signal app: Settings → Linked Devices → Link New Device"
-echo ""
-echo "Press Enter to continue..."
-read
-
-# Get QR code link
-echo "Generating QR code..."
-QR_URL="${SIGNAL_API}/v1/qrcodelink?device_name=${DEVICE_NAME}"
-
-echo ""
-echo "Open this URL in a browser to see the QR code:"
-echo "${QR_URL}"
-echo ""
-echo "Or use curl to get the QR code data:"
-echo "  curl '${QR_URL}'"
-echo ""
-echo "After scanning, verify the link with:"
-echo "  curl '${SIGNAL_API}/v1/accounts'"
-```
-
-**File: `scripts/encrypt_secrets.sh`**
-
-```bash
-#!/bin/bash
-set -euo pipefail
-
-# Dstack secret encryption script
-# Encrypts sensitive environment variables for TEE deployment
-
-KMS_URL="${KMS_URL:-https://kms.example.com}"
-OUTPUT_FILE="${OUTPUT_FILE:-encrypted-env.json}"
-
-echo "🔐 Dstack Secret Encryption"
-echo "============================"
-echo ""
-
-# Get TEE encryption public key
-echo "Fetching TEE public key from KMS..."
-curl -s "${KMS_URL}/v1/encryption-key" > /tmp/tee-pubkey.pem
-
-# Prompt for secrets
-echo ""
-read -p "Signal phone number: " SIGNAL_PHONE
-read -sp "NEAR AI API key: " NEAR_AI_API_KEY
-echo ""
-
-# Create env file
-cat > /tmp/secrets.env << EOF
-SIGNAL_PHONE=${SIGNAL_PHONE}
-NEAR_AI_API_KEY=${NEAR_AI_API_KEY}
-EOF
-
-# Encrypt (using dstack CLI if available)
-if command -v dstack-encrypt &> /dev/null; then
-    dstack-encrypt --pubkey /tmp/tee-pubkey.pem \
-                   --env-file /tmp/secrets.env \
-                   --output "${OUTPUT_FILE}"
-    echo ""
-    echo "✅ Encrypted secrets saved to: ${OUTPUT_FILE}"
-else
-    echo ""
-    echo "⚠️ dstack-encrypt not found"
-    echo "Install Dstack CLI or encrypt manually:"
-    echo "  - Public key: /tmp/tee-pubkey.pem"
-    echo "  - Secrets: /tmp/secrets.env"
-fi
-
-# Cleanup
-rm -f /tmp/secrets.env
-rm -f /tmp/tee-pubkey.pem
-```
-
-### 6.5 Environment Template
+### 8.3 Environment Template
 
 **File: `.env.example`**
 
 ```bash
 # Signal Configuration
-SIGNAL_SERVICE=http://signal-api:8080
 SIGNAL_PHONE=+1234567890
 
 # NEAR AI Configuration
 NEAR_AI_API_KEY=your-api-key-here
 NEAR_AI_BASE_URL=https://api.near.ai/v1
 NEAR_AI_MODEL=llama-3.3-70b
-NEAR_AI_TIMEOUT=60
 
-# Redis Configuration
-REDIS_URL=redis://redis:6379
-REDIS_TTL_HOURS=24
-MAX_CONVERSATION_MESSAGES=50
-
-# Bot Configuration
-LOG_LEVEL=INFO
-SYSTEM_PROMPT="You are a helpful AI assistant..."
-
-# Dstack Configuration (usually auto-configured in TEE)
-DSTACK_SOCKET=/var/run/dstack.sock
+# Logging
+LOG_LEVEL=info
 ```
 
-### 6.6 Makefile
-
-**File: `Makefile`**
-
-```makefile
-.PHONY: help install dev test lint format build run clean
-
-PYTHON := python3
-PIP := pip3
-
-help:
-	@echo "Signal Bot TEE - Development Commands"
-	@echo ""
-	@echo "  make install    - Install production dependencies"
-	@echo "  make dev        - Install development dependencies"
-	@echo "  make test       - Run tests"
-	@echo "  make lint       - Run linters"
-	@echo "  make format     - Format code"
-	@echo "  make build      - Build Docker image"
-	@echo "  make run        - Run locally with Docker Compose"
-	@echo "  make clean      - Remove build artifacts"
-
-install:
-	$(PIP) install -r requirements.txt
-
-dev:
-	$(PIP) install -r requirements.txt -r requirements-dev.txt
-
-test:
-	$(PYTHON) -m pytest tests/ -v --cov=bot --cov-report=term-missing
-
-lint:
-	$(PYTHON) -m ruff check bot/ tests/
-	$(PYTHON) -m mypy bot/
-
-format:
-	$(PYTHON) -m ruff format bot/ tests/
-	$(PYTHON) -m ruff check --fix bot/ tests/
-
-build:
-	docker build -f docker/Dockerfile -t signal-bot-tee:latest .
-
-run:
-	docker compose -f docker/docker-compose.yaml up -d
-
-stop:
-	docker compose -f docker/docker-compose.yaml down
-
-logs:
-	docker compose -f docker/docker-compose.yaml logs -f
-
-clean:
-	find . -type d -name __pycache__ -exec rm -rf {} +
-	find . -type d -name .pytest_cache -exec rm -rf {} +
-	find . -type d -name .mypy_cache -exec rm -rf {} +
-	find . -type f -name "*.pyc" -delete
-	rm -rf build/ dist/ *.egg-info/
-```
-
-### 6.7 Tasks for Phase 5
+### 8.4 Tasks for Phase 6
 
 | Task | Description | Files |
 |------|-------------|-------|
-| 5.1 | Create production Dockerfile | `docker/Dockerfile` |
-| 5.2 | Create development Dockerfile | `docker/Dockerfile.dev` |
-| 5.3 | Create docker-compose.yaml | `docker/docker-compose.yaml` |
-| 5.4 | Create Signal setup script | `scripts/setup_signal.sh` |
-| 5.5 | Create secret encryption script | `scripts/encrypt_secrets.sh` |
-| 5.6 | Create .env.example | `.env.example` |
-| 5.7 | Create Makefile | `Makefile` |
-| 5.8 | Test local Docker deployment | Manual testing |
-| 5.9 | Test Dstack deployment | Manual testing |
+| 6.1 | Create production Dockerfile | `docker/Dockerfile` |
+| 6.2 | Create docker-compose.yaml | `docker/docker-compose.yaml` |
+| 6.3 | Create .env.example | `.env.example` |
+| 6.4 | Create setup scripts | `scripts/` |
+| 6.5 | Test local deployment | Manual |
+| 6.6 | Test Dstack deployment | Manual |
+| 6.7 | Verify binary size <20MB | Manual |
 
 ---
 
-## 7. Phase 6: Testing
+## 9. Phase 7: Testing
 
-**Goal**: Comprehensive test coverage for all components.
+**Goal**: Comprehensive test coverage.
 
-### 7.1 Test Configuration
+### 9.1 Test Configuration
 
-**File: `tests/conftest.py`**
+**File: `tests/common/mod.rs`**
 
-```python
-"""Pytest configuration and fixtures."""
+```rust
+//! Common test utilities.
 
-import pytest
-import pytest_asyncio
-from unittest.mock import AsyncMock, MagicMock
-import fakeredis.aioredis
+use near_ai_client::NearAiClient;
+use conversation_store::ConversationStore;
+use std::sync::Arc;
+use wiremock::MockServer;
 
-from bot.config import Settings
-from bot.near_ai_client import NearAIClient
-from bot.conversation import ConversationStore
-from bot.dstack_client import DstackClient
+pub async fn mock_near_ai_server() -> MockServer {
+    MockServer::start().await
+}
 
-
-@pytest.fixture
-def settings():
-    """Test settings."""
-    return Settings(
-        signal_service="http://test-signal:8080",
-        signal_phone="+1234567890",
-        near_ai_api_key="test-api-key",
-        near_ai_base_url="https://test.near.ai/v1",
-        near_ai_model="test-model",
-        redis_url="redis://localhost:6379",
-        dstack_socket="/tmp/test-dstack.sock"
+pub fn test_near_ai_client(mock_server: &MockServer) -> NearAiClient {
+    NearAiClient::new(
+        "test-api-key",
+        &mock_server.uri(),
+        "test-model",
+        std::time::Duration::from_secs(5),
     )
-
-
-@pytest_asyncio.fixture
-async def fake_redis():
-    """Fake Redis for testing."""
-    return fakeredis.aioredis.FakeRedis()
-
-
-@pytest_asyncio.fixture
-async def conversation_store(fake_redis):
-    """ConversationStore with fake Redis."""
-    store = ConversationStore(
-        redis_url="redis://localhost:6379",
-        max_messages=10,
-        ttl_hours=1
-    )
-    store._redis = fake_redis
-    yield store
-    await store.disconnect()
-
-
-@pytest.fixture
-def mock_near_ai():
-    """Mocked NEAR AI client."""
-    client = MagicMock(spec=NearAIClient)
-    client.chat = AsyncMock(return_value="Test response")
-    client.get_attestation = AsyncMock(return_value={"status": "ok"})
-    client.get_models = AsyncMock(return_value=[{"id": "test-model"}])
-    client.health_check = AsyncMock(return_value=True)
-    client.model = "test-model"
-    return client
-
-
-@pytest.fixture
-def mock_dstack():
-    """Mocked Dstack client."""
-    client = MagicMock(spec=DstackClient)
-    client.is_in_tee = AsyncMock(return_value=True)
-    client.get_app_info = AsyncMock(return_value={
-        "app_id": "test-app",
-        "compose_hash": "abc123",
-        "instance_id": "inst-001"
-    })
-    client.get_quote = AsyncMock(return_value={
-        "quote": "base64-encoded-quote",
-        "report_data": "report-data"
-    })
-    return client
-
-
-@pytest.fixture
-def mock_signal_context():
-    """Mocked Signal bot context."""
-    ctx = MagicMock()
-    ctx.message = MagicMock()
-    ctx.message.source = "+1234567890"
-    ctx.message.text = "Hello, AI!"
-    ctx.message.timestamp = 1234567890
-    ctx.send = AsyncMock()
-    return ctx
+    .unwrap()
+}
 ```
 
-### 7.2 NEAR AI Client Tests
-
-**File: `tests/test_near_ai_client.py`**
-
-```python
-"""Tests for NEAR AI client."""
-
-import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
-
-from bot.near_ai_client import NearAIClient
-from bot.utils.errors import NearAIError, NearAIRateLimitError, NearAIAuthError
-
-
-class TestNearAIClient:
-    """Tests for NearAIClient class."""
-
-    @pytest.fixture
-    def client(self):
-        """Create test client."""
-        return NearAIClient(
-            api_key="test-key",
-            base_url="https://test.api/v1",
-            model="test-model"
-        )
-
-    @pytest.mark.asyncio
-    async def test_chat_returns_response(self, client):
-        """Test successful chat completion."""
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = "Hello!"
-
-        with patch.object(
-            client.client.chat.completions,
-            'create',
-            new_callable=AsyncMock,
-            return_value=mock_response
-        ):
-            result = await client.chat([{"role": "user", "content": "Hi"}])
-            assert result == "Hello!"
-
-    @pytest.mark.asyncio
-    async def test_chat_handles_rate_limit(self, client):
-        """Test rate limit error handling."""
-        with patch.object(
-            client.client.chat.completions,
-            'create',
-            new_callable=AsyncMock,
-            side_effect=Exception("Rate limit exceeded (429)")
-        ):
-            with pytest.raises(NearAIRateLimitError):
-                await client.chat([{"role": "user", "content": "Hi"}])
-
-    @pytest.mark.asyncio
-    async def test_chat_handles_auth_error(self, client):
-        """Test authentication error handling."""
-        with patch.object(
-            client.client.chat.completions,
-            'create',
-            new_callable=AsyncMock,
-            side_effect=Exception("Unauthorized (401)")
-        ):
-            with pytest.raises(NearAIAuthError):
-                await client.chat([{"role": "user", "content": "Hi"}])
-
-    @pytest.mark.asyncio
-    async def test_health_check_success(self, client):
-        """Test successful health check."""
-        with patch.object(
-            client.client.models,
-            'list',
-            new_callable=AsyncMock,
-            return_value=MagicMock(data=[])
-        ):
-            result = await client.health_check()
-            assert result is True
-
-    @pytest.mark.asyncio
-    async def test_health_check_failure(self, client):
-        """Test failed health check."""
-        with patch.object(
-            client.client.models,
-            'list',
-            new_callable=AsyncMock,
-            side_effect=Exception("Connection failed")
-        ):
-            result = await client.health_check()
-            assert result is False
-```
-
-### 7.3 Conversation Store Tests
-
-**File: `tests/test_conversation.py`**
-
-```python
-"""Tests for conversation storage."""
-
-import pytest
-from datetime import datetime
-
-from bot.conversation import ConversationStore, Conversation, Message
-
-
-class TestConversationStore:
-    """Tests for ConversationStore class."""
-
-    @pytest.mark.asyncio
-    async def test_add_message_creates_conversation(self, conversation_store):
-        """Test adding message to new conversation."""
-        conv = await conversation_store.add_message(
-            user_id="+1234567890",
-            role="user",
-            content="Hello!",
-            system_prompt="Be helpful"
-        )
-
-        assert conv.user_id == "+1234567890"
-        assert len(conv.messages) == 1
-        assert conv.messages[0].role == "user"
-        assert conv.messages[0].content == "Hello!"
-        assert conv.system_prompt == "Be helpful"
-
-    @pytest.mark.asyncio
-    async def test_add_message_appends_to_existing(self, conversation_store):
-        """Test adding message to existing conversation."""
-        await conversation_store.add_message("+1234567890", "user", "Hello!")
-        conv = await conversation_store.add_message("+1234567890", "assistant", "Hi there!")
-
-        assert len(conv.messages) == 2
-        assert conv.messages[1].role == "assistant"
-        assert conv.messages[1].content == "Hi there!"
-
-    @pytest.mark.asyncio
-    async def test_message_trimming(self, conversation_store):
-        """Test that old messages are trimmed."""
-        # Store has max_messages=10
-        for i in range(15):
-            await conversation_store.add_message(
-                "+1234567890", "user", f"Message {i}"
-            )
-
-        conv = await conversation_store.get("+1234567890")
-        assert len(conv.messages) == 10
-        # Should have messages 5-14 (most recent)
-        assert conv.messages[0].content == "Message 5"
-        assert conv.messages[-1].content == "Message 14"
-
-    @pytest.mark.asyncio
-    async def test_get_nonexistent_returns_none(self, conversation_store):
-        """Test getting non-existent conversation."""
-        conv = await conversation_store.get("+9999999999")
-        assert conv is None
-
-    @pytest.mark.asyncio
-    async def test_clear_conversation(self, conversation_store):
-        """Test clearing conversation."""
-        await conversation_store.add_message("+1234567890", "user", "Hello!")
-
-        result = await conversation_store.clear("+1234567890")
-        assert result is True
-
-        conv = await conversation_store.get("+1234567890")
-        assert conv is None
-
-    @pytest.mark.asyncio
-    async def test_clear_nonexistent_returns_false(self, conversation_store):
-        """Test clearing non-existent conversation."""
-        result = await conversation_store.clear("+9999999999")
-        assert result is False
-
-    @pytest.mark.asyncio
-    async def test_to_openai_messages(self, conversation_store):
-        """Test conversion to OpenAI format."""
-        await conversation_store.add_message(
-            "+1234567890", "user", "Hello!", "Be helpful"
-        )
-        await conversation_store.add_message(
-            "+1234567890", "assistant", "Hi there!"
-        )
-
-        messages = await conversation_store.to_openai_messages("+1234567890")
-
-        assert len(messages) == 3
-        assert messages[0]["role"] == "system"
-        assert messages[0]["content"] == "Be helpful"
-        assert messages[1]["role"] == "user"
-        assert messages[2]["role"] == "assistant"
-
-    @pytest.mark.asyncio
-    async def test_to_openai_messages_with_override(self, conversation_store):
-        """Test system prompt override."""
-        await conversation_store.add_message(
-            "+1234567890", "user", "Hello!", "Original prompt"
-        )
-
-        messages = await conversation_store.to_openai_messages(
-            "+1234567890",
-            system_prompt="Override prompt"
-        )
-
-        assert messages[0]["content"] == "Override prompt"
-```
-
-### 7.4 Command Tests
-
-**File: `tests/test_commands/test_chat.py`**
-
-```python
-"""Tests for chat command."""
-
-import pytest
-from unittest.mock import AsyncMock
-
-from bot.commands.chat import ChatCommand
-from bot.utils.errors import NearAIError, NearAIRateLimitError
-
-
-class TestChatCommand:
-    """Tests for ChatCommand class."""
-
-    @pytest.fixture
-    def chat_cmd(self, mock_near_ai, conversation_store):
-        """Create chat command instance."""
-        return ChatCommand(
-            near_ai=mock_near_ai,
-            conversations=conversation_store,
-            system_prompt="Test prompt"
-        )
-
-    @pytest.mark.asyncio
-    async def test_processes_message(
-        self, chat_cmd, mock_signal_context, conversation_store
-    ):
-        """Test normal message processing."""
-        mock_signal_context.message.text = "Hello AI!"
-
-        await chat_cmd.execute(
-            mock_signal_context,
-            "+1234567890",
-            "Hello AI!"
-        )
-
-        mock_signal_context.send.assert_called_once_with("Test response")
-
-        # Verify conversation was saved
-        conv = await conversation_store.get("+1234567890")
-        assert len(conv.messages) == 2
-        assert conv.messages[0].content == "Hello AI!"
-        assert conv.messages[1].content == "Test response"
-
-    @pytest.mark.asyncio
-    async def test_skips_commands(self, chat_cmd, mock_signal_context):
-        """Test that command messages are skipped."""
-        mock_signal_context.message.text = "!help"
-
-        await chat_cmd.execute(
-            mock_signal_context,
-            "+1234567890",
-            "!help"
-        )
-
-        mock_signal_context.send.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_handles_rate_limit(
-        self, chat_cmd, mock_signal_context, mock_near_ai
-    ):
-        """Test rate limit handling."""
-        mock_near_ai.chat = AsyncMock(side_effect=NearAIRateLimitError("Limit"))
-
-        await chat_cmd.execute(
-            mock_signal_context,
-            "+1234567890",
-            "Hello!"
-        )
-
-        # Should send rate limit message
-        call_args = mock_signal_context.send.call_args[0][0]
-        assert "too many requests" in call_args.lower()
-
-    @pytest.mark.asyncio
-    async def test_handles_api_error(
-        self, chat_cmd, mock_signal_context, mock_near_ai
-    ):
-        """Test API error handling."""
-        mock_near_ai.chat = AsyncMock(side_effect=NearAIError("API down"))
-
-        await chat_cmd.execute(
-            mock_signal_context,
-            "+1234567890",
-            "Hello!"
-        )
-
-        # Should send error message
-        call_args = mock_signal_context.send.call_args[0][0]
-        assert "error" in call_args.lower()
-```
-
-### 7.5 Tasks for Phase 6
+### 9.2 Tasks for Phase 7
 
 | Task | Description | Files |
 |------|-------------|-------|
-| 6.1 | Create test configuration | `tests/conftest.py` |
-| 6.2 | Write NEAR AI client tests | `tests/test_near_ai_client.py` |
-| 6.3 | Write conversation store tests | `tests/test_conversation.py` |
-| 6.4 | Write Dstack client tests | `tests/test_dstack_client.py` |
-| 6.5 | Write chat command tests | `tests/test_commands/test_chat.py` |
-| 6.6 | Write verify command tests | `tests/test_commands/test_verify.py` |
-| 6.7 | Write clear command tests | `tests/test_commands/test_clear.py` |
-| 6.8 | Create integration test suite | `tests/integration/` |
-| 6.9 | Achieve >80% code coverage | All test files |
+| 7.1 | Create test utilities | `tests/common/` |
+| 7.2 | Write near-ai-client tests | `tests/near_ai_test.rs` |
+| 7.3 | Write conversation tests | `tests/conversation_test.rs` |
+| 7.4 | Write command tests | Unit tests in crates |
+| 7.5 | Write integration tests | `tests/e2e_test.rs` |
+| 7.6 | Achieve >80% coverage | All tests |
 
 ---
 
-## 8. Phase 7: Documentation & Polish
-
-**Goal**: Final documentation, code cleanup, and release preparation.
-
-### 8.1 Tasks
+## 10. Phase 8: Documentation & Polish
 
 | Task | Description | Files |
 |------|-------------|-------|
-| 7.1 | Update README with quick start | `README.md` |
-| 7.2 | Add API documentation | `bot/` docstrings |
-| 7.3 | Create CHANGELOG | `CHANGELOG.md` |
-| 7.4 | Add type hints throughout | All Python files |
-| 7.5 | Run final lint and format | All files |
-| 7.6 | Security review | All files |
-| 7.7 | Performance testing | Manual testing |
-| 7.8 | Create release checklist | `docs/RELEASE.md` |
+| 8.1 | Update README | `README.md` |
+| 8.2 | Add rustdoc comments | All source files |
+| 8.3 | Run clippy and fix warnings | All source files |
+| 8.4 | Security audit with cargo-audit | N/A |
+| 8.5 | Create CHANGELOG | `CHANGELOG.md` |
 
 ---
 
-## 9. File Manifest
+## 11. File Manifest
 
-Complete list of files to create:
-
-### Core Application
-- `bot/__init__.py`
-- `bot/main.py`
-- `bot/config.py`
-- `bot/near_ai_client.py`
-- `bot/conversation.py`
-- `bot/dstack_client.py`
-
-### Commands
-- `bot/commands/__init__.py`
-- `bot/commands/base.py`
-- `bot/commands/chat.py`
-- `bot/commands/verify.py`
-- `bot/commands/clear.py`
-- `bot/commands/help.py`
-- `bot/commands/models.py`
-
-### Utilities
-- `bot/utils/__init__.py`
-- `bot/utils/logging.py`
-- `bot/utils/errors.py`
-
-### Tests
-- `tests/__init__.py`
-- `tests/conftest.py`
-- `tests/test_near_ai_client.py`
-- `tests/test_conversation.py`
-- `tests/test_dstack_client.py`
-- `tests/test_commands/__init__.py`
-- `tests/test_commands/test_chat.py`
-- `tests/test_commands/test_verify.py`
-- `tests/test_commands/test_clear.py`
-- `tests/integration/__init__.py`
-- `tests/integration/test_e2e.py`
-
-### Scripts
-- `scripts/setup_signal.sh`
-- `scripts/encrypt_secrets.sh`
-- `scripts/verify_tee.py`
-- `scripts/health_check.py`
-
-### Docker
-- `docker/Dockerfile`
-- `docker/Dockerfile.dev`
-- `docker/docker-compose.yaml`
+### Crates
+- `crates/signal-bot/src/{main,config,error}.rs`
+- `crates/signal-bot/src/commands/{mod,chat,verify,clear,help,models}.rs`
+- `crates/near-ai-client/src/{lib,client,types,error}.rs`
+- `crates/conversation-store/src/{lib,store,types,error}.rs`
+- `crates/dstack-client/src/{lib,client,types,error}.rs`
+- `crates/signal-client/src/{lib,client,types,error,receiver}.rs`
 
 ### Configuration
-- `pyproject.toml`
-- `requirements.txt`
-- `requirements-dev.txt`
+- `Cargo.toml`, `rust-toolchain.toml`, `.cargo/config.toml`
 - `.env.example`
-- `Makefile`
 
-### Documentation
-- `README.md` (update)
-- `DESIGN.md` (exists)
-- `IMPLEMENTATION_PLAN.md` (this file)
-- `CHANGELOG.md`
+### Docker
+- `docker/Dockerfile`, `docker/docker-compose.yaml`
+
+### Scripts
+- `scripts/setup_signal.sh`, `scripts/encrypt_secrets.sh`
+
+### Tests
+- `tests/common/mod.rs`
+- `tests/{near_ai,conversation,e2e}_test.rs`
 
 ---
 
-## 10. Dependencies
+## 12. Dependencies
 
-### Production Dependencies (`requirements.txt`)
+### Production Crates
 
-```
-httpx>=0.27.0
-signalbot>=0.8.0
-openai>=1.0.0
-redis>=5.0.0
-pydantic>=2.0.0
-pydantic-settings>=2.0.0
-```
+| Crate | Version | Purpose |
+|-------|---------|---------|
+| tokio | 1.35 | Async runtime |
+| reqwest | 0.11 | HTTP client |
+| serde | 1.0 | Serialization |
+| redis | 0.24 | Redis client |
+| tracing | 0.1 | Logging |
+| thiserror | 1.0 | Error types |
+| anyhow | 1.0 | Error handling |
+| chrono | 0.4 | Time handling |
+| hyper | 0.14 | Unix socket HTTP |
+| hyperlocal | 0.8 | Unix socket support |
 
-### Development Dependencies (`requirements-dev.txt`)
+### Dev Crates
 
-```
-pytest>=8.0.0
-pytest-asyncio>=0.23.0
-pytest-cov>=4.0.0
-mypy>=1.8.0
-ruff>=0.2.0
-fakeredis>=2.20.0
-respx>=0.20.0
-```
+| Crate | Version | Purpose |
+|-------|---------|---------|
+| tokio-test | 0.4 | Async testing |
+| mockall | 0.12 | Mocking |
+| wiremock | 0.5 | HTTP mocking |
+| testcontainers | 0.15 | Container testing |
 
 ---
 
 ## Summary
 
-This implementation plan breaks the Signal Bot TEE project into 7 phases:
+This Rust implementation provides:
 
-1. **Foundation** (8 tasks): Project structure, configuration, logging, errors
-2. **Core Components** (10 tasks): NEAR AI client, conversation store, Dstack client
-3. **Bot Application** (9 tasks): Commands and main entry point
-4. **TEE Integration** (5 tasks): Verification utilities and testing
-5. **Docker & Deployment** (9 tasks): Containerization and deployment scripts
-6. **Testing** (9 tasks): Comprehensive test coverage
-7. **Documentation** (8 tasks): Final polish and release prep
+| Metric | Value |
+|--------|-------|
+| Total tasks | ~50 |
+| Crates | 5 |
+| Binary size | ~15MB (static musl) |
+| Memory usage | ~10-30MB |
+| Cold start | <50ms |
+| Dependencies | ~60 crates |
 
-**Total: 58 tasks**
-
-Each phase builds on the previous one, allowing incremental development and testing. The plan provides complete code samples that can be directly used or adapted during implementation.
+**Key advantages over Python:**
+- 10x smaller deployment footprint
+- 3-5x lower memory usage
+- Near-instant startup
+- Compile-time safety
+- Smaller attack surface
