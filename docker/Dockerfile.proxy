@@ -25,7 +25,7 @@ RUN mkdir -p crates/signal-bot/src/commands && \
     mkdir -p crates/signal-registration-proxy/src && echo "fn main() {}" > crates/signal-registration-proxy/src/main.rs
 
 # Build dependencies only (ignore errors from dummy files)
-RUN cargo build --release 2>/dev/null || true
+RUN cargo build --release -p signal-registration-proxy 2>/dev/null || true
 
 # Copy actual source
 COPY crates crates
@@ -34,7 +34,7 @@ COPY crates crates
 RUN find crates -name "*.rs" -exec touch {} \;
 
 # Build release binary
-RUN cargo build --release --bin signal-bot
+RUN cargo build --release --bin signal-registration-proxy
 
 # Runtime stage
 FROM alpine:3.21
@@ -42,11 +42,17 @@ FROM alpine:3.21
 # Install CA certificates for HTTPS
 RUN apk add --no-cache ca-certificates
 
+# Create data directory for encrypted registry
+RUN mkdir -p /data && chown 1000:1000 /data
+
 # Copy binary
-COPY --from=builder /app/target/release/signal-bot /signal-bot
+COPY --from=builder /app/target/release/signal-registration-proxy /signal-registration-proxy
 
 # Non-root user
 RUN adduser -D -u 1000 appuser
 USER appuser
 
-ENTRYPOINT ["/signal-bot"]
+# Expose port
+EXPOSE 8081
+
+ENTRYPOINT ["/signal-registration-proxy"]

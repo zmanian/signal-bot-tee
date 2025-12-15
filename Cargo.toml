@@ -6,6 +6,7 @@ members = [
     "crates/conversation-store",
     "crates/dstack-client",
     "crates/signal-client",
+    "crates/signal-registration-proxy",
 ]
 
 [workspace.package]

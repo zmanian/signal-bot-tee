@@ -1,0 +1,49 @@
+[package]
+name = "signal-registration-proxy"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "TEE-secured Signal registration proxy with encrypted persistent storage"
+
+[[bin]]
+name = "signal-registration-proxy"
+path = "src/main.rs"
+
+[dependencies]
+# Workspace crates
+dstack-client = { path = "../dstack-client" }
+
+# Workspace dependencies
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+config.workspace = true
+dotenvy.workspace = true
+reqwest.workspace = true
+sha2.workspace = true
+hex.workspace = true
+chrono.workspace = true
+
+# HTTP server
+axum = "0.7"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+
+# Rate limiting
+governor = "0.8"
+
+# Encryption
+aes-gcm = "0.10"
+rand = "0.8"
+
+# URL encoding
+urlencoding = "2.1"
+
+[dev-dependencies]
+tokio-test.workspace = true
+tempfile = "3.14"
