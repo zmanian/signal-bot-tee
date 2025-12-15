@@ -31,10 +31,13 @@ impl CommandHandler for HelpHandler {
 Just send a message to chat with AI.
 
 **Commands:**
-- !verify - Show privacy attestation proofs
+- !verify <challenge> - Get TEE attestation with your challenge
 - !clear - Clear conversation history
 - !models - List available AI models
 - !help - Show this message
+
+**Verification:**
+Use `!verify my-random-text` to get cryptographic proof this bot runs in a TEE. Your challenge is embedded in the TDX quote, proving the attestation was generated fresh for you.
 
 **Privacy:**
 Your messages are end-to-end encrypted via Signal, processed in a verified TEE (Intel TDX), and sent to NEAR AI Cloud's private inference (NVIDIA GPU TEE).
