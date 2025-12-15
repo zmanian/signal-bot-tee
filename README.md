@@ -25,6 +25,7 @@ This project implements a Signal bot that runs inside a Dstack-powered TEE (Inte
 - Dual attestation (Intel TDX + NVIDIA GPU TEE)
 - Cryptographic verification with user-provided challenges
 - In-memory conversation storage (no external persistence)
+- Group chat support with shared conversation context
 - OpenAI-compatible API integration
 
 ## Bot Commands
@@ -37,6 +38,28 @@ This project implements a Signal bot that runs inside a Dstack-powered TEE (Inte
 | `!help` | Show help message |
 
 Any other message is sent to the AI for a response.
+
+## Group Chat Support
+
+The bot can be added to Signal group chats with shared conversation context:
+
+| Context | Behavior |
+|---------|----------|
+| Direct Message | Personal conversation history per user |
+| Group Chat | Shared history - all members see the same context |
+
+**In groups:**
+- All messages contribute to a shared conversation
+- The AI can reference what other group members said
+- `!clear` clears the entire group's conversation history
+- `!verify` works the same (provides TEE attestation)
+
+**Example:**
+```
+Alice: "My favorite color is blue"
+Bob: "What's Alice's favorite color?"
+Bot: "Alice mentioned her favorite color is blue"
+```
 
 ## Verification
 
