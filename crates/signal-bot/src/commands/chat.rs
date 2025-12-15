@@ -35,25 +35,37 @@ impl CommandHandler for ChatHandler {
         true
     }
 
-    #[instrument(skip(self, message), fields(user = %message.source))]
+    #[instrument(skip(self, message), fields(user = %message.source, is_group = %message.is_group))]
     async fn execute(&self, message: &BotMessage) -> AppResult<String> {
-        let user_id = &message.source;
+        // Use reply_target as conversation key:
+        // - For DMs: sender's phone number
+        // - For groups: group_id (shared context for all members)
+        let conversation_id = message.reply_target();
 
-        info!(
-            "Chat from {}: {}...",
-            &user_id[..user_id.len().min(8)],
-            &message.text[..message.text.len().min(50)]
-        );
+        if message.is_group {
+            info!(
+                "Group chat from {} in {}: {}...",
+                &message.source[..message.source.len().min(8)],
+                &conversation_id[..conversation_id.len().min(12)],
+                &message.text[..message.text.len().min(50)]
+            );
+        } else {
+            info!(
+                "Chat from {}: {}...",
+                &conversation_id[..conversation_id.len().min(8)],
+                &message.text[..message.text.len().min(50)]
+            );
+        }
 
         // Add user message to history
         self.conversations
-            .add_message(user_id, "user", &message.text, Some(&self.system_prompt))
+            .add_message(conversation_id, "user", &message.text, Some(&self.system_prompt))
             .await?;
 
         // Get full conversation for context
         let stored_messages = self
             .conversations
-            .to_openai_messages(user_id, Some(&self.system_prompt))
+            .to_openai_messages(conversation_id, Some(&self.system_prompt))
             .await?;
 
         // Convert to NEAR AI message format
@@ -96,12 +108,12 @@ impl CommandHandler for ChatHandler {
 
         // Store assistant response
         self.conversations
-            .add_message(user_id, "assistant", &response, None)
+            .add_message(conversation_id, "assistant", &response, None)
             .await?;
 
         info!(
             "Response to {}: {} chars",
-            &user_id[..user_id.len().min(8)],
+            &conversation_id[..conversation_id.len().min(12)],
             response.len()
         );
 

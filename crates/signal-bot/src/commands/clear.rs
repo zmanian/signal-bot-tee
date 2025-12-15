@@ -25,11 +25,18 @@ impl CommandHandler for ClearHandler {
     }
 
     async fn execute(&self, message: &BotMessage) -> AppResult<String> {
-        let cleared = self.conversations.clear(&message.source).await?;
+        // Use reply_target: clears group conversation in groups, personal in DMs
+        let conversation_id = message.reply_target();
+        let cleared = self.conversations.clear(conversation_id).await?;
 
         if cleared {
-            info!("Cleared history for {}", &message.source[..8.min(message.source.len())]);
-            Ok("Conversation history cleared.".into())
+            if message.is_group {
+                info!("Cleared group history for {}", &conversation_id[..12.min(conversation_id.len())]);
+                Ok("Group conversation history cleared.".into())
+            } else {
+                info!("Cleared history for {}", &conversation_id[..8.min(conversation_id.len())]);
+                Ok("Conversation history cleared.".into())
+            }
         } else {
             Ok("No conversation history to clear.".into())
         }
