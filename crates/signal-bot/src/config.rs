@@ -25,6 +25,10 @@ pub struct Config {
     /// Dstack configuration
     #[serde(default)]
     pub dstack: DstackConfig,
+
+    /// Tools configuration
+    #[serde(default)]
+    pub tools: ToolsConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -85,6 +89,50 @@ pub struct DstackConfig {
     pub socket_path: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct ToolsConfig {
+    /// Enable tool use system
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+
+    /// Maximum tool calls per message
+    #[serde(default = "default_max_tool_calls")]
+    pub max_tool_calls: usize,
+
+    /// Web search configuration
+    #[serde(default)]
+    pub web_search: WebSearchConfig,
+
+    /// Weather tool configuration
+    #[serde(default)]
+    pub weather: WeatherConfig,
+
+    /// Calculator tool configuration
+    #[serde(default)]
+    pub calculator: CalculatorConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct WebSearchConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    pub api_key: Option<String>,
+    #[serde(default = "default_search_results")]
+    pub max_results: usize,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct WeatherConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CalculatorConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
 // Default implementations
 impl Default for SignalConfig {
     fn default() -> Self {
@@ -121,6 +169,44 @@ impl Default for DstackConfig {
     }
 }
 
+impl Default for ToolsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_true(),
+            max_tool_calls: default_max_tool_calls(),
+            web_search: WebSearchConfig::default(),
+            weather: WeatherConfig::default(),
+            calculator: CalculatorConfig::default(),
+        }
+    }
+}
+
+impl Default for WebSearchConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_true(),
+            api_key: None,
+            max_results: default_search_results(),
+        }
+    }
+}
+
+impl Default for WeatherConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_true(),
+        }
+    }
+}
+
+impl Default for CalculatorConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_true(),
+        }
+    }
+}
+
 // Default value functions
 fn default_signal_service() -> String {
     "http://signal-api:8080".into()
@@ -151,10 +237,25 @@ fn default_max_messages() -> usize {
 }
 
 fn default_system_prompt() -> String {
-    "You are a helpful AI assistant accessible via Signal. \
-     You provide accurate, thoughtful responses while being concise for mobile chat. \
-     You're running in a privacy-preserving environment with verifiable execution."
-        .into()
+    r#"You are an AI assistant accessible via Signal, running in a Trusted Execution Environment (TEE) for privacy protection.
+
+## Privacy & Security
+- Your conversations are protected by Intel TDX hardware encryption
+- Neither the bot operator nor the AI provider can read your messages
+- Users can verify this by sending "!verify" for cryptographic attestation
+
+## Available Tools
+You have access to these tools - use them when helpful:
+- **web_search**: Search the web for current information, news, facts
+- **get_weather**: Get current weather for any location
+- **calculate**: Evaluate math expressions accurately
+
+## Guidelines
+- Be concise - this is mobile chat, not essays
+- Use tools proactively for current information (don't guess dates, prices, weather)
+- For calculations, use the calculate tool rather than mental math
+- If a tool fails, explain what happened and try to help anyway
+- Never fabricate search results or weather data"#.into()
 }
 
 fn default_log_level() -> String {
@@ -163,6 +264,18 @@ fn default_log_level() -> String {
 
 fn default_dstack_socket() -> String {
     "/var/run/dstack.sock".into()
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_max_tool_calls() -> usize {
+    5
+}
+
+fn default_search_results() -> usize {
+    5
 }
 
 impl Config {

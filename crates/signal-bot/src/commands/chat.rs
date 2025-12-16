@@ -78,6 +78,8 @@ impl CommandHandler for ChatHandler {
                     _ => Role::User,
                 },
                 content: m.content,
+                tool_call_id: None,
+                tool_calls: None,
             })
             .collect();
 
