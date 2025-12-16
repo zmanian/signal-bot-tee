@@ -1,0 +1,19 @@
+[package]
+name = "tools"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+async-trait = "0.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+reqwest = { version = "0.11", features = ["json"] }
+secrecy = "0.8"
+tracing = "0.1"
+tokio = { version = "1", features = ["time"] }
+meval = "0.2"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+wiremock = "0.5"
