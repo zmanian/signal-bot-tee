@@ -5,12 +5,14 @@ use crate::types::*;
 use std::time::Duration;
 use tokio::time::sleep;
 use tokio_stream::Stream;
-use tracing::{debug, error};
+use tracing::{debug, error, info, warn};
 
-/// Message receiver that polls for new messages.
+/// Message receiver that polls all registered accounts for new messages.
 pub struct MessageReceiver {
     client: SignalClient,
     poll_interval: Duration,
+    /// How often to refresh the account list
+    account_refresh_interval: Duration,
 }
 
 impl MessageReceiver {
@@ -19,30 +21,68 @@ impl MessageReceiver {
         Self {
             client,
             poll_interval,
+            // Refresh account list every 5 minutes
+            account_refresh_interval: Duration::from_secs(300),
         }
     }
 
-    /// Start receiving messages as an async stream.
+    /// Start receiving messages from all registered accounts as an async stream.
     pub fn stream(self) -> impl Stream<Item = BotMessage> {
         async_stream::stream! {
+            let mut accounts: Vec<String> = Vec::new();
+            let mut last_account_refresh = std::time::Instant::now();
+
             loop {
-                match self.client.receive().await {
-                    Ok(messages) => {
-                        for msg in messages {
-                            if let Some(bot_msg) = BotMessage::from_incoming(&msg) {
-                                debug!("Received: {} from {}",
-                                    &bot_msg.text[..bot_msg.text.len().min(50)],
-                                    bot_msg.source
-                                );
-                                yield bot_msg;
+                // Refresh account list periodically or on first run
+                if accounts.is_empty()
+                    || last_account_refresh.elapsed() >= self.account_refresh_interval
+                {
+                    match self.client.list_accounts().await {
+                        Ok(new_accounts) => {
+                            if new_accounts != accounts {
+                                info!("Polling {} accounts: {:?}", new_accounts.len(), new_accounts);
                             }
+                            accounts = new_accounts;
+                            last_account_refresh = std::time::Instant::now();
+                        }
+                        Err(e) => {
+                            error!("Failed to list accounts: {}", e);
+                            if accounts.is_empty() {
+                                // Can't proceed without accounts
+                                sleep(Duration::from_secs(5)).await;
+                                continue;
+                            }
+                            // Continue with cached accounts
                         }
                     }
-                    Err(e) => {
-                        error!("Receive error: {}", e);
-                        // Back off on error
-                        sleep(Duration::from_secs(5)).await;
-                        continue;
+                }
+
+                if accounts.is_empty() {
+                    warn!("No registered accounts found, waiting...");
+                    sleep(Duration::from_secs(10)).await;
+                    continue;
+                }
+
+                // Poll each account for messages
+                for account in &accounts {
+                    match self.client.receive(account).await {
+                        Ok(messages) => {
+                            for msg in messages {
+                                if let Some(bot_msg) = BotMessage::from_incoming(&msg) {
+                                    debug!(
+                                        "Received on {}: '{}' from {}",
+                                        account,
+                                        &bot_msg.text[..bot_msg.text.len().min(50)],
+                                        bot_msg.source
+                                    );
+                                    yield bot_msg;
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            error!("Receive error for {}: {}", account, e);
+                            // Continue to next account
+                        }
                     }
                 }
 

@@ -11,9 +11,7 @@ services:
       # Receive messages every minute (5-field cron format)
       - AUTO_RECEIVE_SCHEDULE=* * * * *
       - LOG_LEVEL=info
-    # Temporarily exposed for debugging registration
-    ports:
-      - "8080:8080"
+    # Port closed - signal-api only accessible internally
     volumes:
       - signal-config-v3:/home/.local/share/signal-cli
     healthcheck:
@@ -29,9 +27,8 @@ services:
     image: zaki1iqlusion/signal-bot-tee:latest
     container_name: signal-bot
     environment:
-      # Signal configuration
+      # Signal configuration - polls ALL registered accounts automatically
       - SIGNAL__SERVICE_URL=http://signal-api:8080
-      - SIGNAL__PHONE_NUMBER=${SIGNAL_PHONE}
       # NEAR AI configuration - secrets encrypted by Phala
       - NEAR_AI__API_KEY=${NEAR_AI_API_KEY}
       - NEAR_AI__BASE_URL=${NEAR_AI_BASE_URL:-https://cloud-api.near.ai/v1}

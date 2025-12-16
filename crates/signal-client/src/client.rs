@@ -8,19 +8,17 @@ use tracing::{debug, instrument, warn};
 use urlencoding::encode;
 
 /// Signal CLI REST API client.
+///
+/// Supports multi-account operations - can send/receive for any registered account.
 #[derive(Clone)]
 pub struct SignalClient {
     client: Client,
     base_url: String,
-    phone_number: String,
 }
 
 impl SignalClient {
     /// Create a new Signal client.
-    pub fn new(
-        base_url: impl Into<String>,
-        phone_number: impl Into<String>,
-    ) -> Result<Self, SignalError> {
+    pub fn new(base_url: impl Into<String>) -> Result<Self, SignalError> {
         let client = Client::builder()
             .timeout(Duration::from_secs(30))
             .build()?;
@@ -28,13 +26,26 @@ impl SignalClient {
         Ok(Self {
             client,
             base_url: base_url.into(),
-            phone_number: phone_number.into(),
         })
     }
 
-    /// Get the configured phone number.
-    pub fn phone_number(&self) -> &str {
-        &self.phone_number
+    /// List all registered accounts.
+    #[instrument(skip(self))]
+    pub async fn list_accounts(&self) -> Result<Vec<String>, SignalError> {
+        let response = self
+            .client
+            .get(format!("{}/v1/accounts", self.base_url))
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let msg = response.text().await.unwrap_or_default();
+            return Err(SignalError::Api(msg));
+        }
+
+        let accounts: Vec<String> = response.json().await?;
+        debug!("Found {} registered accounts", accounts.len());
+        Ok(accounts)
     }
 
     /// Check if the Signal API is healthy.
@@ -47,10 +58,10 @@ impl SignalClient {
             .unwrap_or(false)
     }
 
-    /// Get account information.
+    /// Get account information for a specific phone number.
     #[instrument(skip(self))]
-    pub async fn get_account(&self) -> Result<Account, SignalError> {
-        let encoded_number = encode(&self.phone_number);
+    pub async fn get_account(&self, phone_number: &str) -> Result<Account, SignalError> {
+        let encoded_number = encode(phone_number);
         let response = self
             .client
             .get(format!("{}/v1/accounts/{}", self.base_url, encoded_number))
@@ -65,10 +76,10 @@ impl SignalClient {
         Ok(response.json().await?)
     }
 
-    /// Receive pending messages.
+    /// Receive pending messages for a specific phone number.
     #[instrument(skip(self))]
-    pub async fn receive(&self) -> Result<Vec<IncomingMessage>, SignalError> {
-        let encoded_number = encode(&self.phone_number);
+    pub async fn receive(&self, phone_number: &str) -> Result<Vec<IncomingMessage>, SignalError> {
+        let encoded_number = encode(phone_number);
         let response = self
             .client
             .get(format!(
@@ -84,16 +95,21 @@ impl SignalClient {
         }
 
         let messages: Vec<IncomingMessage> = response.json().await?;
-        debug!("Received {} messages", messages.len());
+        debug!("Received {} messages for {}", messages.len(), phone_number);
         Ok(messages)
     }
 
-    /// Send a message to a recipient.
+    /// Send a message from a specific account to a recipient.
     #[instrument(skip(self, message))]
-    pub async fn send(&self, recipient: &str, message: &str) -> Result<(), SignalError> {
+    pub async fn send(
+        &self,
+        from_number: &str,
+        recipient: &str,
+        message: &str,
+    ) -> Result<(), SignalError> {
         let request = SendMessageRequest {
             message: message.to_string(),
-            number: Some(self.phone_number.clone()),
+            number: Some(from_number.to_string()),
             recipients: Some(vec![recipient.to_string()]),
         };
 
@@ -110,12 +126,14 @@ impl SignalClient {
             return Err(SignalError::SendFailed(msg));
         }
 
-        debug!("Sent message to {}", recipient);
+        debug!("Sent message from {} to {}", from_number, recipient);
         Ok(())
     }
 
     /// Reply to a message (handles both direct and group messages).
+    /// Uses the receiving account to send the reply.
     pub async fn reply(&self, original: &BotMessage, message: &str) -> Result<(), SignalError> {
-        self.send(original.reply_target(), message).await
+        self.send(&original.receiving_account, original.reply_target(), message)
+            .await
     }
 }

@@ -46,7 +46,7 @@ async fn main() -> AppResult<()> {
 
     let dstack = Arc::new(DstackClient::new(&config.dstack.socket_path));
 
-    let signal = SignalClient::new(&config.signal.service_url, &config.signal.phone_number)
+    let signal = SignalClient::new(&config.signal.service_url)
         .context("Failed to create Signal client")?;
 
     // Health checks

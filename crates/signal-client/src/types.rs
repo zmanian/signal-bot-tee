@@ -60,11 +60,18 @@ pub struct Account {
 /// Parsed message for bot processing.
 #[derive(Debug, Clone)]
 pub struct BotMessage {
+    /// The phone number that sent the message.
     pub source: String,
+    /// The message text.
     pub text: String,
+    /// Message timestamp.
     pub timestamp: i64,
+    /// Whether this is a group message.
     pub is_group: bool,
+    /// Group ID if this is a group message.
     pub group_id: Option<String>,
+    /// The bot's phone number that received this message.
+    pub receiving_account: String,
 }
 
 impl BotMessage {
@@ -79,6 +86,7 @@ impl BotMessage {
             timestamp: msg.envelope.timestamp,
             is_group: data.group_info.is_some(),
             group_id: data.group_info.as_ref().map(|g| g.group_id.clone()),
+            receiving_account: msg.account.clone(),
         })
     }
 

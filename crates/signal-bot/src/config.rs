@@ -33,9 +33,6 @@ pub struct SignalConfig {
     #[serde(default = "default_signal_service")]
     pub service_url: String,
 
-    /// Phone number for Signal bot
-    pub phone_number: String,
-
     /// Poll interval for messages
     #[serde(default = "default_poll_interval", with = "humantime_serde")]
     pub poll_interval: Duration,
@@ -93,7 +90,6 @@ impl Default for SignalConfig {
     fn default() -> Self {
         Self {
             service_url: default_signal_service(),
-            phone_number: String::new(),
             poll_interval: default_poll_interval(),
         }
     }
