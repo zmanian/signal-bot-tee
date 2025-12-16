@@ -16,3 +16,4 @@ docker/.env
 
 # macOS
 .DS_Store
+phala.env

@@ -473,19 +473,25 @@ phala auth status  # Verify authentication
 
 **Note**: The API token format is different from `sk-rp-...` keys (those are registry keys).
 
-#### Step 3: Push Bot Image to DockerHub
+#### Step 3: Build and Push Images to DockerHub
+
+**IMPORTANT**: Phala Cloud runs on linux/amd64. You MUST build images for this platform:
 
 ```bash
-# Build the image
-cd docker && docker-compose build signal-bot
+cd /path/to/signal-bot-tee
 
-# Tag for DockerHub
-docker tag docker-signal-bot:latest YOUR_DOCKERHUB/signal-bot-tee:latest
+# Build signal-bot for linux/amd64
+docker buildx build --platform linux/amd64 \
+  -t YOUR_DOCKERHUB/signal-bot-tee:latest \
+  -f docker/Dockerfile --push .
 
-# Login and push
-docker login
-docker push YOUR_DOCKERHUB/signal-bot-tee:latest
+# Build signal-registration-proxy for linux/amd64
+docker buildx build --platform linux/amd64 \
+  -t YOUR_DOCKERHUB/signal-registration-proxy:vX.Y.Z \
+  -f docker/Dockerfile.proxy --push .
 ```
+
+**Why this matters**: If you build without `--platform linux/amd64` on an ARM Mac (M1/M2/M3), Docker builds for arm64 by default. Phala CVMs cannot run arm64 images and will fail with "no matching manifest for linux/amd64".
 
 #### Step 4: Update Phala Compose File
 

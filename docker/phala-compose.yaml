@@ -12,7 +12,9 @@ services:
       # The signal-bot polls /v1/receive directly. AUTO_RECEIVE_SCHEDULE would consume
       # messages before the bot can get them.
       - LOG_LEVEL=info
-    # Port closed - signal-api only accessible internally
+    # TEMPORARY: Port exposed for debugging - remove after fixing
+    ports:
+      - "8080:8080"
     volumes:
       - signal-config-v3:/home/.local/share/signal-cli
     healthcheck:
@@ -50,7 +52,7 @@ services:
 
   signal-registration-proxy:
     # Image hosted on Docker Hub
-    image: zaki1iqlusion/signal-registration-proxy:v0.6.0
+    image: zaki1iqlusion/signal-registration-proxy:v0.6.1
     container_name: signal-registration-proxy
     environment:
       # Signal API (internal)
