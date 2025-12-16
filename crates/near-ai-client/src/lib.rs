@@ -184,15 +184,19 @@ mod tests {
     async fn test_message_constructors() {
         let system = Message::system("You are a helpful assistant");
         assert!(matches!(system.role, Role::System));
-        assert_eq!(system.content, "You are a helpful assistant");
+        assert_eq!(system.content, Some("You are a helpful assistant".to_string()));
+        assert_eq!(system.tool_calls, None);
+        assert_eq!(system.tool_call_id, None);
 
         let user = Message::user("Hello");
         assert!(matches!(user.role, Role::User));
-        assert_eq!(user.content, "Hello");
+        assert_eq!(user.content, Some("Hello".to_string()));
+        assert_eq!(user.tool_calls, None);
 
         let assistant = Message::assistant("Hi there!");
         assert!(matches!(assistant.role, Role::Assistant));
-        assert_eq!(assistant.content, "Hi there!");
+        assert_eq!(assistant.content, Some("Hi there!".to_string()));
+        assert_eq!(assistant.tool_calls, None);
     }
 
     #[tokio::test]

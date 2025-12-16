@@ -66,6 +66,8 @@ impl NearAiClient {
             temperature,
             max_tokens,
             stream: Some(false),
+            tools: None,
+            tool_choice: None,
         };
 
         let response = self
@@ -84,7 +86,7 @@ impl NearAiClient {
             .choices
             .into_iter()
             .next()
-            .map(|c| c.message.content)
+            .and_then(|c| c.message.content)
             .filter(|content| !content.is_empty())
             .ok_or(NearAiError::EmptyResponse)
     }
@@ -103,6 +105,8 @@ impl NearAiClient {
             temperature,
             max_tokens,
             stream: Some(true),
+            tools: None,
+            tool_choice: None,
         };
 
         let response = self
