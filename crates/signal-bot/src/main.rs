@@ -15,6 +15,7 @@ use signal_client::{MessageReceiver, SignalClient};
 use std::sync::Arc;
 use tokio::signal;
 use tokio_stream::StreamExt;
+use tools::ToolRegistry;
 use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
@@ -46,8 +47,14 @@ async fn main() -> AppResult<()> {
 
     let dstack = Arc::new(DstackClient::new(&config.dstack.socket_path));
 
-    let signal = SignalClient::new(&config.signal.service_url)
-        .context("Failed to create Signal client")?;
+    let signal = Arc::new(
+        SignalClient::new(&config.signal.service_url)
+            .context("Failed to create Signal client")?,
+    );
+
+    // Create tool registry
+    let tool_registry = Arc::new(ToolRegistry::new());
+    // TODO: Register tools based on config (will be done in future tasks)
 
     // Health checks
     if near_ai.health_check().await {
@@ -83,7 +90,10 @@ async fn main() -> AppResult<()> {
         Box::new(ChatHandler::new(
             near_ai.clone(),
             conversations.clone(),
+            signal.clone(),
+            tool_registry.clone(),
             config.bot.system_prompt.clone(),
+            config.tools.max_tool_calls,
         )),
         Box::new(VerifyHandler::new(dstack.clone())),
         Box::new(ClearHandler::new(conversations.clone())),
@@ -96,7 +106,7 @@ async fn main() -> AppResult<()> {
     info!("Listening for messages...");
 
     // Start message receiver
-    let receiver = MessageReceiver::new(signal.clone(), config.signal.poll_interval);
+    let receiver = MessageReceiver::new((*signal).clone(), config.signal.poll_interval);
     let mut stream = Box::pin(receiver.stream());
 
     // Main message loop

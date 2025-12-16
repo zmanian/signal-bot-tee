@@ -13,6 +13,7 @@ near-ai-client = { path = "../near-ai-client" }
 conversation-store = { path = "../conversation-store" }
 dstack-client = { path = "../dstack-client" }
 signal-client = { path = "../signal-client" }
+tools = { path = "../tools" }
 
 # Workspace dependencies
 tokio.workspace = true
