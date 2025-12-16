@@ -303,4 +303,156 @@ mod tests {
         assert_eq!(conv.messages[0].content, Some("Message 3".into()));
         assert_eq!(conv.messages[2].content, Some("Message 5".into()));
     }
+
+    #[tokio::test]
+    async fn test_store_add_assistant_with_tools() {
+        let store = ConversationStore::new(100, Duration::from_secs(3600));
+
+        let tool_calls = vec![
+            StoredToolCall {
+                id: "call-1".into(),
+                name: "calculate".into(),
+                arguments: r#"{"expression": "2+2"}"#.into(),
+            },
+            StoredToolCall {
+                id: "call-2".into(),
+                name: "get_weather".into(),
+                arguments: r#"{"location": "Tokyo"}"#.into(),
+            },
+        ];
+
+        store
+            .add_assistant_with_tools("user1", Some("Let me check that for you"), &tool_calls)
+            .await
+            .unwrap();
+
+        let conv = store.get("user1").await.unwrap().unwrap();
+        assert_eq!(conv.messages.len(), 1);
+        assert_eq!(conv.messages[0].role, "assistant");
+        assert_eq!(conv.messages[0].content, Some("Let me check that for you".into()));
+        assert!(conv.messages[0].tool_calls.is_some());
+
+        let stored_calls = conv.messages[0].tool_calls.as_ref().unwrap();
+        assert_eq!(stored_calls.len(), 2);
+        assert_eq!(stored_calls[0].id, "call-1");
+        assert_eq!(stored_calls[0].name, "calculate");
+        assert_eq!(stored_calls[1].id, "call-2");
+        assert_eq!(stored_calls[1].name, "get_weather");
+    }
+
+    #[tokio::test]
+    async fn test_store_add_assistant_with_tools_no_content() {
+        let store = ConversationStore::new(100, Duration::from_secs(3600));
+
+        let tool_calls = vec![StoredToolCall {
+            id: "call-1".into(),
+            name: "calculate".into(),
+            arguments: r#"{"expression": "2+2"}"#.into(),
+        }];
+
+        store
+            .add_assistant_with_tools("user1", None, &tool_calls)
+            .await
+            .unwrap();
+
+        let conv = store.get("user1").await.unwrap().unwrap();
+        assert_eq!(conv.messages.len(), 1);
+        assert_eq!(conv.messages[0].role, "assistant");
+        assert_eq!(conv.messages[0].content, None);
+        assert!(conv.messages[0].tool_calls.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_store_add_tool_result() {
+        let store = ConversationStore::new(100, Duration::from_secs(3600));
+
+        store
+            .add_tool_result("user1", "call-123", "The result is 42")
+            .await
+            .unwrap();
+
+        let conv = store.get("user1").await.unwrap().unwrap();
+        assert_eq!(conv.messages.len(), 1);
+        assert_eq!(conv.messages[0].role, "tool");
+        assert_eq!(conv.messages[0].content, Some("The result is 42".into()));
+        assert_eq!(conv.messages[0].tool_call_id, Some("call-123".into()));
+        assert!(conv.messages[0].tool_calls.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_store_tool_message_flow() {
+        let store = ConversationStore::new(100, Duration::from_secs(3600));
+
+        // User message
+        store.add_message("user1", "user", "What is 2+2?", None).await.unwrap();
+
+        // Assistant with tool call
+        let tool_calls = vec![StoredToolCall {
+            id: "call-1".into(),
+            name: "calculate".into(),
+            arguments: r#"{"expression": "2+2"}"#.into(),
+        }];
+        store
+            .add_assistant_with_tools("user1", None, &tool_calls)
+            .await
+            .unwrap();
+
+        // Tool result
+        store
+            .add_tool_result("user1", "call-1", "2+2 = 4")
+            .await
+            .unwrap();
+
+        // Final assistant response
+        store
+            .add_message("user1", "assistant", "The answer is 4", None)
+            .await
+            .unwrap();
+
+        let conv = store.get("user1").await.unwrap().unwrap();
+        assert_eq!(conv.messages.len(), 4);
+        assert_eq!(conv.messages[0].role, "user");
+        assert_eq!(conv.messages[1].role, "assistant");
+        assert!(conv.messages[1].tool_calls.is_some());
+        assert_eq!(conv.messages[2].role, "tool");
+        assert_eq!(conv.messages[2].tool_call_id, Some("call-1".into()));
+        assert_eq!(conv.messages[3].role, "assistant");
+    }
+
+    #[tokio::test]
+    async fn test_store_to_openai_messages_with_tools() {
+        let store = ConversationStore::new(100, Duration::from_secs(3600));
+
+        // User message
+        store.add_message("user1", "user", "Calculate 2+2", Some("Be helpful")).await.unwrap();
+
+        // Assistant with tool call
+        let tool_calls = vec![StoredToolCall {
+            id: "call-1".into(),
+            name: "calculate".into(),
+            arguments: r#"{"expression": "2+2"}"#.into(),
+        }];
+        store
+            .add_assistant_with_tools("user1", None, &tool_calls)
+            .await
+            .unwrap();
+
+        // Tool result
+        store
+            .add_tool_result("user1", "call-1", "4")
+            .await
+            .unwrap();
+
+        let messages = store.to_openai_messages("user1", Some("Be helpful")).await.unwrap();
+
+        // system + user + assistant + tool
+        assert_eq!(messages.len(), 4);
+        assert_eq!(messages[0].role, "system");
+        assert_eq!(messages[1].role, "user");
+        assert_eq!(messages[2].role, "assistant");
+        assert!(messages[2].tool_calls.is_some());
+        assert_eq!(messages[2].tool_calls.as_ref().unwrap().len(), 1);
+        assert_eq!(messages[3].role, "tool");
+        assert_eq!(messages[3].tool_call_id, Some("call-1".into()));
+    }
 }
