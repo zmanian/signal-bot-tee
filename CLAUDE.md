@@ -647,6 +647,10 @@ curl -X POST https://YOUR_ENDPOINT-8080.dstack-pha-prod9.phala.network/v1/regist
 | `"Captcha required"` | Signal requires captcha | Get token from signalcaptchas.org/registration/generate.html |
 | HTTP 201 but no SMS | Success! Code was sent | Check phone; try voice if SMS blocked |
 | HTTP 400 with captcha error | Captcha expired | Captchas expire quickly; get a fresh one |
+| `"[403] Authorization failed"` | Captcha expired or invalid | Get a fresh captcha immediately before registering |
+| `"[429] Rate Limited"` | Too many registration attempts | Wait 24 hours before retrying |
+| Signal API container crash loop | Invalid `AUTO_RECEIVE_SCHEDULE` format | Use 5-field cron format (e.g., `* * * * *`), not 6-field |
+| `signal_api_healthy: false` | Signal CLI container not running | Check if container is crashing; review cron format |
 
 #### Step 4: Stale Volume Fix
 
