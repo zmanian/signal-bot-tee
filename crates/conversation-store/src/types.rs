@@ -3,20 +3,55 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+/// Stored tool call info.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StoredToolCall {
+    pub id: String,
+    pub name: String,
+    pub arguments: String,
+}
+
 /// A single message in a conversation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoredMessage {
     pub role: String,
-    pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
     pub timestamp: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<StoredToolCall>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
 }
 
 impl StoredMessage {
     pub fn new(role: impl Into<String>, content: impl Into<String>) -> Self {
         Self {
             role: role.into(),
-            content: content.into(),
+            content: Some(content.into()),
             timestamp: Utc::now(),
+            tool_calls: None,
+            tool_call_id: None,
+        }
+    }
+
+    pub fn with_tool_calls(role: impl Into<String>, content: Option<String>, tool_calls: Vec<StoredToolCall>) -> Self {
+        Self {
+            role: role.into(),
+            content,
+            timestamp: Utc::now(),
+            tool_calls: Some(tool_calls),
+            tool_call_id: None,
+        }
+    }
+
+    pub fn tool_result(tool_call_id: impl Into<String>, content: impl Into<String>) -> Self {
+        Self {
+            role: "tool".into(),
+            content: Some(content.into()),
+            timestamp: Utc::now(),
+            tool_calls: None,
+            tool_call_id: Some(tool_call_id.into()),
         }
     }
 }
@@ -62,5 +97,10 @@ impl Conversation {
 #[derive(Debug, Clone, Serialize)]
 pub struct OpenAiMessage {
     pub role: String,
-    pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<StoredToolCall>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
 }

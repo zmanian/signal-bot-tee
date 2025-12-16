@@ -66,6 +66,8 @@ impl NearAiClient {
             temperature,
             max_tokens,
             stream: Some(false),
+            tools: None,
+            tool_choice: None,
         };
 
         let response = self
@@ -84,9 +86,53 @@ impl NearAiClient {
             .choices
             .into_iter()
             .next()
-            .map(|c| c.message.content)
+            .and_then(|c| c.message.content)
             .filter(|content| !content.is_empty())
             .ok_or(NearAiError::EmptyResponse)
+    }
+
+    /// Send a chat completion request with tool support.
+    #[instrument(skip(self, messages, tools), fields(message_count = messages.len()))]
+    pub async fn chat_with_tools(
+        &self,
+        messages: Vec<Message>,
+        temperature: Option<f32>,
+        max_tokens: Option<u32>,
+        tools: Option<&[ToolDefinition]>,
+    ) -> Result<ChatResponseWithTools, NearAiError> {
+        let request = ChatRequest {
+            model: self.model.clone(),
+            messages,
+            temperature,
+            max_tokens,
+            stream: Some(false),
+            tools: tools.map(|t| t.to_vec()),
+            tool_choice: tools.map(|_| "auto".to_string()),
+        };
+
+        let response = self
+            .client
+            .post(format!("{}/chat/completions", self.base_url))
+            .header("Authorization", format!("Bearer {}", self.api_key.expose_secret()))
+            .header("Content-Type", "application/json")
+            .json(&request)
+            .send()
+            .await?;
+
+        let chat_response = self.handle_response::<ChatResponse>(response).await?;
+
+        // Extract from first choice
+        let choice = chat_response
+            .choices
+            .into_iter()
+            .next()
+            .ok_or(NearAiError::EmptyResponse)?;
+
+        Ok(ChatResponseWithTools {
+            content: choice.message.content,
+            tool_calls: choice.message.tool_calls,
+            finish_reason: choice.finish_reason.unwrap_or_default(),
+        })
     }
 
     /// Send a streaming chat completion request.
@@ -103,6 +149,8 @@ impl NearAiClient {
             temperature,
             max_tokens,
             stream: Some(true),
+            tools: None,
+            tool_choice: None,
         };
 
         let response = self

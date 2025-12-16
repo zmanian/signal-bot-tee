@@ -15,8 +15,48 @@ use signal_client::{MessageReceiver, SignalClient};
 use std::sync::Arc;
 use tokio::signal;
 use tokio_stream::StreamExt;
+use tools::{ToolRegistry, builtin::{CalculatorTool, WeatherTool, WebSearchTool}};
 use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+
+/// Create and configure tool registry based on config.
+fn create_tool_registry(config: &crate::config::ToolsConfig) -> ToolRegistry {
+    let mut registry = ToolRegistry::new();
+
+    if !config.enabled {
+        info!("Tools system disabled by configuration");
+        return registry;
+    }
+
+    // Calculator - always available (no API key needed)
+    if config.calculator.enabled {
+        registry.register(Arc::new(CalculatorTool::new()));
+        info!("Registered tool: calculate");
+    }
+
+    // Weather - always available (no API key needed)
+    if config.weather.enabled {
+        registry.register(Arc::new(WeatherTool::new()));
+        info!("Registered tool: get_weather");
+    }
+
+    // Web search - requires API key
+    if config.web_search.enabled {
+        if let Some(api_key) = &config.web_search.api_key {
+            let tool = WebSearchTool::new(api_key.clone())
+                .with_max_results(config.web_search.max_results);
+            registry.register(Arc::new(tool));
+            info!("Registered tool: web_search (max_results: {})", config.web_search.max_results);
+        } else {
+            warn!("Web search tool enabled but TOOLS__WEB_SEARCH__API_KEY not set - skipping");
+        }
+    }
+
+    let enabled_count = registry.list_enabled().len();
+    info!("Tool registry ready with {} enabled tools", enabled_count);
+
+    registry
+}
 
 #[tokio::main]
 async fn main() -> AppResult<()> {
@@ -46,8 +86,13 @@ async fn main() -> AppResult<()> {
 
     let dstack = Arc::new(DstackClient::new(&config.dstack.socket_path));
 
-    let signal = SignalClient::new(&config.signal.service_url)
-        .context("Failed to create Signal client")?;
+    let signal = Arc::new(
+        SignalClient::new(&config.signal.service_url)
+            .context("Failed to create Signal client")?,
+    );
+
+    // Create tool registry based on config
+    let tool_registry = Arc::new(create_tool_registry(&config.tools));
 
     // Health checks
     if near_ai.health_check().await {
@@ -83,7 +128,10 @@ async fn main() -> AppResult<()> {
         Box::new(ChatHandler::new(
             near_ai.clone(),
             conversations.clone(),
+            signal.clone(),
+            tool_registry.clone(),
             config.bot.system_prompt.clone(),
+            config.tools.max_tool_calls,
         )),
         Box::new(VerifyHandler::new(dstack.clone())),
         Box::new(ClearHandler::new(conversations.clone())),
@@ -96,7 +144,7 @@ async fn main() -> AppResult<()> {
     info!("Listening for messages...");
 
     // Start message receiver
-    let receiver = MessageReceiver::new(signal.clone(), config.signal.poll_interval);
+    let receiver = MessageReceiver::new((*signal).clone(), config.signal.poll_interval);
     let mut stream = Box::pin(receiver.stream());
 
     // Main message loop

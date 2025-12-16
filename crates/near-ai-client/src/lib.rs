@@ -126,72 +126,24 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_models() {
+        // list_models returns a hardcoded list (NEAR AI doesn't have /models endpoint)
         let mock_server = MockServer::start().await;
-
-        let response_body = serde_json::json!({
-            "object": "list",
-            "data": [
-                {
-                    "id": "gpt-4",
-                    "object": "model",
-                    "created": 1677652288,
-                    "owned_by": "near-ai"
-                },
-                {
-                    "id": "gpt-3.5-turbo",
-                    "object": "model",
-                    "created": 1677652288,
-                    "owned_by": "near-ai"
-                }
-            ]
-        });
-
-        Mock::given(method("GET"))
-            .and(path("/models"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(&response_body))
-            .mount(&mock_server)
-            .await;
-
         let client = create_test_client(&mock_server).await;
         let result = client.list_models().await;
 
         assert!(result.is_ok());
         let models = result.unwrap();
-        assert_eq!(models.len(), 2);
-        assert_eq!(models[0].id, "gpt-4");
+        assert_eq!(models.len(), 4);
+        assert_eq!(models[0].id, "deepseek-ai/DeepSeek-V3.1");
     }
 
     #[tokio::test]
     async fn test_health_check_success() {
+        // health_check uses list_models which returns hardcoded data
+        // So it always succeeds (no API call needed)
         let mock_server = MockServer::start().await;
-
-        let response_body = serde_json::json!({
-            "object": "list",
-            "data": []
-        });
-
-        Mock::given(method("GET"))
-            .and(path("/models"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(&response_body))
-            .mount(&mock_server)
-            .await;
-
         let client = create_test_client(&mock_server).await;
         assert!(client.health_check().await);
-    }
-
-    #[tokio::test]
-    async fn test_health_check_failure() {
-        let mock_server = MockServer::start().await;
-
-        Mock::given(method("GET"))
-            .and(path("/models"))
-            .respond_with(ResponseTemplate::new(500))
-            .mount(&mock_server)
-            .await;
-
-        let client = create_test_client(&mock_server).await;
-        assert!(!client.health_check().await);
     }
 
     #[tokio::test]
@@ -232,15 +184,19 @@ mod tests {
     async fn test_message_constructors() {
         let system = Message::system("You are a helpful assistant");
         assert!(matches!(system.role, Role::System));
-        assert_eq!(system.content, "You are a helpful assistant");
+        assert_eq!(system.content, Some("You are a helpful assistant".to_string()));
+        assert_eq!(system.tool_calls, None);
+        assert_eq!(system.tool_call_id, None);
 
         let user = Message::user("Hello");
         assert!(matches!(user.role, Role::User));
-        assert_eq!(user.content, "Hello");
+        assert_eq!(user.content, Some("Hello".to_string()));
+        assert_eq!(user.tool_calls, None);
 
         let assistant = Message::assistant("Hi there!");
         assert!(matches!(assistant.role, Role::Assistant));
-        assert_eq!(assistant.content, "Hi there!");
+        assert_eq!(assistant.content, Some("Hi there!".to_string()));
+        assert_eq!(assistant.tool_calls, None);
     }
 
     #[tokio::test]

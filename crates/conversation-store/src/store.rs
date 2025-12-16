@@ -155,7 +155,9 @@ impl ConversationStore {
         if let Some(p) = prompt {
             messages.push(OpenAiMessage {
                 role: "system".into(),
-                content: p,
+                content: Some(p),
+                tool_calls: None,
+                tool_call_id: None,
             });
         }
 
@@ -165,6 +167,8 @@ impl ConversationStore {
                 messages.push(OpenAiMessage {
                     role: msg.role,
                     content: msg.content,
+                    tool_calls: msg.tool_calls,
+                    tool_call_id: msg.tool_call_id,
                 });
             }
         }
@@ -194,5 +198,70 @@ impl ConversationStore {
     /// Health check - always returns true for in-memory store.
     pub async fn health_check(&self) -> bool {
         true
+    }
+
+    /// Add an assistant message with tool calls.
+    #[instrument(skip(self, tool_calls))]
+    pub async fn add_assistant_with_tools(
+        &self,
+        user_id: &str,
+        content: Option<&str>,
+        tool_calls: &[crate::types::StoredToolCall],
+    ) -> Result<Conversation, ConversationError> {
+        let message = StoredMessage::with_tool_calls(
+            "assistant",
+            content.map(String::from),
+            tool_calls.to_vec(),
+        );
+
+        self.add_message_internal(user_id, message).await
+    }
+
+    /// Add a tool result message.
+    #[instrument(skip(self, content))]
+    pub async fn add_tool_result(
+        &self,
+        user_id: &str,
+        tool_call_id: &str,
+        content: &str,
+    ) -> Result<Conversation, ConversationError> {
+        let message = StoredMessage::tool_result(tool_call_id, content);
+        self.add_message_internal(user_id, message).await
+    }
+
+    /// Internal method to add a pre-constructed message.
+    async fn add_message_internal(
+        &self,
+        user_id: &str,
+        message: StoredMessage,
+    ) -> Result<Conversation, ConversationError> {
+        let mut conversations = self.conversations.write().await;
+        let now = std::time::Instant::now();
+        let expires_at = now + self.ttl;
+
+        let entry = conversations
+            .entry(user_id.to_string())
+            .or_insert_with(|| ConversationEntry {
+                conversation: Conversation::new(user_id, None),
+                expires_at,
+            });
+
+        // Update expiration on activity
+        entry.expires_at = expires_at;
+
+        // Add the message
+        entry.conversation.messages.push(message);
+        entry.conversation.updated_at = chrono::Utc::now();
+
+        // Trim old messages
+        entry.conversation.trim(self.max_messages);
+
+        debug!(
+            "Added message for {} (total: {})",
+            user_id,
+            entry.conversation.messages.len()
+        );
+
+        Ok(entry.conversation.clone())
     }
 }

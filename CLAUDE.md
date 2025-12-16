@@ -199,6 +199,7 @@ crates/
   dstack-client/    # TEE attestation via Dstack
   signal-client/    # Signal CLI REST API client
   signal-registration-proxy/  # Multi-tenant registration service
+  tools/            # Tool use system (calculator, weather, web search)
 ```
 
 ## Registration Proxy
@@ -345,6 +346,90 @@ Environment variables (see `.env.example`):
 - `NEAR_AI__API_KEY`: API key (stored as SecretString, never logged)
 - `CONVERSATION__TTL`: How long conversations persist (default 24h)
 - `CONVERSATION__MAX_MESSAGES`: Max messages per conversation (default 50)
+
+### Tool Configuration
+
+Environment variables for the tool use system:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TOOLS__ENABLED` | `true` | Master switch for tool system |
+| `TOOLS__MAX_TOOL_CALLS` | `5` | Max tool executions per message |
+| `TOOLS__CALCULATOR__ENABLED` | `true` | Enable calculator tool |
+| `TOOLS__WEATHER__ENABLED` | `true` | Enable weather tool |
+| `TOOLS__WEB_SEARCH__ENABLED` | `true` | Enable web search tool |
+| `TOOLS__WEB_SEARCH__API_KEY` | (none) | Brave Search API key |
+| `TOOLS__WEB_SEARCH__MAX_RESULTS` | `5` | Number of search results |
+
+## Tool Use System
+
+The bot supports LLM tool use (function calling) for enhanced capabilities:
+
+### Available Tools
+
+| Tool | Description | API Key Required? |
+|------|-------------|-------------------|
+| `calculate` | Evaluate math expressions (uses `meval` crate) | No |
+| `get_weather` | Current weather for any location (Open-Meteo API) | No |
+| `web_search` | Search the web for current information (Brave Search) | Yes |
+
+### How Tools Work
+
+1. User sends a message that might benefit from a tool (e.g., "What's 2^10?" or "Weather in Tokyo")
+2. The LLM decides to call one or more tools and returns a tool_calls response
+3. Bot sends a progress message to user: "🔧 Using calculate..."
+4. Bot executes the tool and gets results
+5. Results are added to conversation and sent back to LLM
+6. LLM formulates a natural language response incorporating tool results
+7. Bot sends final response to user
+
+This loop can repeat up to `TOOLS__MAX_TOOL_CALLS` times per user message.
+
+### Setting Up Brave Search API
+
+Web search requires a Brave Search API key:
+
+1. Go to https://brave.com/search/api/
+2. Click "Get Started for Free"
+3. Create account and verify email
+4. Generate API key from dashboard
+5. Free tier: 2,000 queries/month
+
+Set the environment variable:
+```bash
+TOOLS__WEB_SEARCH__API_KEY=your-brave-api-key
+```
+
+### Disabling Tools
+
+To run without tools:
+```bash
+TOOLS__ENABLED=false
+```
+
+To disable specific tools:
+```bash
+TOOLS__WEB_SEARCH__ENABLED=false
+TOOLS__WEATHER__ENABLED=false
+```
+
+### Architecture
+
+```
+crates/tools/
+├── src/
+│   ├── lib.rs           # Module exports
+│   ├── types.rs         # ToolDefinition, ToolCall, ToolResult, Tool trait
+│   ├── registry.rs      # ToolRegistry - manages available tools
+│   ├── executor.rs      # ToolExecutor - timeout, error handling
+│   ├── error.rs         # ToolError enum
+│   └── builtin/
+│       ├── calculator.rs   # Pure Rust math (meval crate)
+│       ├── weather.rs      # Open-Meteo API (free, no key)
+│       └── web_search.rs   # Brave Search API
+```
+
+The tool system uses OpenAI-compatible function calling schema, which NEAR AI supports.
 
 ## Testing
 
