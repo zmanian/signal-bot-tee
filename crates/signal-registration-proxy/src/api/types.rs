@@ -81,3 +81,49 @@ pub struct HealthResponse {
     pub registry_count: usize,
     pub signal_api_healthy: bool,
 }
+
+/// Request to update profile.
+#[derive(Debug, Deserialize)]
+pub struct UpdateProfileRequest {
+    /// Display name
+    pub name: Option<String>,
+
+    /// About/status text
+    pub about: Option<String>,
+
+    /// Ownership secret (must match what was provided during registration)
+    pub ownership_secret: Option<String>,
+}
+
+/// Response after updating profile.
+#[derive(Debug, Serialize)]
+pub struct ProfileResponse {
+    pub phone_number: String,
+    pub message: String,
+}
+
+/// Request to set username.
+#[derive(Debug, Deserialize)]
+pub struct SetUsernameRequest {
+    /// Desired username (without discriminator)
+    pub username: String,
+
+    /// Ownership secret (must match what was provided during registration)
+    pub ownership_secret: Option<String>,
+}
+
+/// Response after setting username.
+#[derive(Debug, Serialize)]
+pub struct UsernameResponse {
+    pub phone_number: String,
+    pub username: Option<String>,
+    pub username_link: Option<String>,
+    pub message: String,
+}
+
+/// Request to delete username.
+#[derive(Debug, Deserialize)]
+pub struct DeleteUsernameRequest {
+    /// Ownership secret (must match what was provided during registration)
+    pub ownership_secret: Option<String>,
+}

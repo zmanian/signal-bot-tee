@@ -12,7 +12,7 @@ use crate::registry::{Registry, Store};
 use crate::signal::SignalRegistrationClient;
 use axum::{
     middleware as axum_middleware,
-    routing::{delete, get, post},
+    routing::{delete, get, post, put},
     Router,
 };
 use std::sync::Arc;
@@ -64,6 +64,10 @@ pub fn create_router_with_rate_limit(state: AppState, rate_limit: RateLimitState
         .route("/v1/status/:number", get(handlers::get_status))
         .route("/v1/accounts", get(handlers::list_accounts))
         .route("/v1/unregister/:number", delete(handlers::unregister))
+        // Profile and username management (requires ownership_secret)
+        .route("/v1/profiles/:number", put(handlers::update_profile))
+        .route("/v1/accounts/:number/username", post(handlers::set_username))
+        .route("/v1/accounts/:number/username", delete(handlers::delete_username))
         // Debug endpoints
         .route("/v1/debug/signal-accounts", get(handlers::debug_signal_accounts))
         .route("/v1/debug/force-unregister/:number", post(handlers::debug_force_unregister))

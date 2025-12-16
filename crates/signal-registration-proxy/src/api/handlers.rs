@@ -1,6 +1,10 @@
 //! HTTP request handlers.
 
-use super::types::*;
+use super::types::{
+    AccountInfo, AccountsResponse, DeleteUsernameRequest, HealthResponse, ProfileResponse,
+    RegisterRequest, RegisterResponse, SetUsernameRequest, StatusResponse, UnregisterRequest,
+    UpdateProfileRequest, UsernameResponse, VerifyRequest, VerifyResponse,
+};
 use super::AppState;
 use crate::error::ProxyError;
 use crate::registry::{normalize_phone_number, PhoneNumberRecord, RegistrationStatus};
@@ -252,4 +256,116 @@ pub async fn debug_force_unregister(
         "phone_number": number,
         "message": "Force unregistered from Signal CLI"
     })))
+}
+
+/// Update profile for a registered phone number.
+pub async fn update_profile(
+    State(state): State<AppState>,
+    Path(number): Path<String>,
+    Json(request): Json<UpdateProfileRequest>,
+) -> Result<Json<ProfileResponse>, ProxyError> {
+    let number = normalize_phone_number(&number).map_err(ProxyError::InvalidPhoneNumber)?;
+    info!(phone_number = %number, "Profile update request received");
+
+    // Check registration exists and is verified
+    let registry = state.registry.read().await;
+    let record = registry.get(&number).ok_or(ProxyError::NotFound(number.clone()))?;
+
+    if record.status != RegistrationStatus::Verified {
+        return Err(ProxyError::NotFound(number));
+    }
+
+    // Verify ownership
+    if !record.verify_ownership(request.ownership_secret.as_deref()) {
+        return Err(ProxyError::OwnershipProofMismatch);
+    }
+    drop(registry);
+
+    // Update profile via Signal CLI
+    state
+        .signal_client
+        .update_profile(&number, request.name.as_deref(), request.about.as_deref())
+        .await?;
+
+    info!(phone_number = %number, "Profile updated successfully");
+
+    Ok(Json(ProfileResponse {
+        phone_number: number,
+        message: "Profile updated successfully.".to_string(),
+    }))
+}
+
+/// Set username for a registered phone number.
+pub async fn set_username(
+    State(state): State<AppState>,
+    Path(number): Path<String>,
+    Json(request): Json<SetUsernameRequest>,
+) -> Result<Json<UsernameResponse>, ProxyError> {
+    let number = normalize_phone_number(&number).map_err(ProxyError::InvalidPhoneNumber)?;
+    info!(phone_number = %number, username = %request.username, "Set username request received");
+
+    // Check registration exists and is verified
+    let registry = state.registry.read().await;
+    let record = registry.get(&number).ok_or(ProxyError::NotFound(number.clone()))?;
+
+    if record.status != RegistrationStatus::Verified {
+        return Err(ProxyError::NotFound(number));
+    }
+
+    // Verify ownership
+    if !record.verify_ownership(request.ownership_secret.as_deref()) {
+        return Err(ProxyError::OwnershipProofMismatch);
+    }
+    drop(registry);
+
+    // Set username via Signal CLI
+    let info = state
+        .signal_client
+        .set_username(&number, &request.username)
+        .await?;
+
+    info!(phone_number = %number, username = ?info.username, "Username set successfully");
+
+    Ok(Json(UsernameResponse {
+        phone_number: number,
+        username: info.username,
+        username_link: info.username_link,
+        message: "Username set successfully.".to_string(),
+    }))
+}
+
+/// Delete username for a registered phone number.
+pub async fn delete_username(
+    State(state): State<AppState>,
+    Path(number): Path<String>,
+    Json(request): Json<DeleteUsernameRequest>,
+) -> Result<Json<UsernameResponse>, ProxyError> {
+    let number = normalize_phone_number(&number).map_err(ProxyError::InvalidPhoneNumber)?;
+    info!(phone_number = %number, "Delete username request received");
+
+    // Check registration exists and is verified
+    let registry = state.registry.read().await;
+    let record = registry.get(&number).ok_or(ProxyError::NotFound(number.clone()))?;
+
+    if record.status != RegistrationStatus::Verified {
+        return Err(ProxyError::NotFound(number));
+    }
+
+    // Verify ownership
+    if !record.verify_ownership(request.ownership_secret.as_deref()) {
+        return Err(ProxyError::OwnershipProofMismatch);
+    }
+    drop(registry);
+
+    // Delete username via Signal CLI
+    state.signal_client.delete_username(&number).await?;
+
+    info!(phone_number = %number, "Username deleted successfully");
+
+    Ok(Json(UsernameResponse {
+        phone_number: number,
+        username: None,
+        username_link: None,
+        message: "Username deleted successfully.".to_string(),
+    }))
 }

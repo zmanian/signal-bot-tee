@@ -52,7 +52,7 @@ services:
 
   signal-registration-proxy:
     # Image hosted on Docker Hub
-    image: zaki1iqlusion/signal-registration-proxy:v0.6.1
+    image: zaki1iqlusion/signal-registration-proxy:v0.7.0
     container_name: signal-registration-proxy
     environment:
       # Signal API (internal)

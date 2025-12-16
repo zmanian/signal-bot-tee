@@ -197,6 +197,103 @@ impl SignalRegistrationClient {
 
         Ok(accounts)
     }
+
+    /// Update profile for a phone number.
+    #[instrument(skip(self))]
+    pub async fn update_profile(
+        &self,
+        phone_number: &str,
+        name: Option<&str>,
+        about: Option<&str>,
+    ) -> Result<(), ProxyError> {
+        let encoded_number = encode(phone_number);
+        let url = format!("{}/v1/profiles/{}", self.base_url, encoded_number);
+
+        let body = ProfileRequestBody {
+            name: name.map(String::from),
+            about: about.map(String::from),
+        };
+
+        debug!(url = %url, "Sending profile update request");
+
+        let response = self.client.put(&url).json(&body).send().await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            warn!(status = %status, body = %body, "Signal profile update failed");
+
+            return Err(ProxyError::SignalApi(format!(
+                "Profile update failed: {} - {}",
+                status, body
+            )));
+        }
+
+        debug!(phone_number = %phone_number, "Profile updated successfully");
+        Ok(())
+    }
+
+    /// Set username for a phone number.
+    #[instrument(skip(self))]
+    pub async fn set_username(
+        &self,
+        phone_number: &str,
+        username: &str,
+    ) -> Result<UsernameInfo, ProxyError> {
+        let encoded_number = encode(phone_number);
+        let url = format!("{}/v1/accounts/{}/username", self.base_url, encoded_number);
+
+        let body = UsernameRequestBody {
+            username: username.to_string(),
+        };
+
+        debug!(url = %url, username = %username, "Sending set username request");
+
+        let response = self.client.post(&url).json(&body).send().await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            warn!(status = %status, body = %body, "Signal set username failed");
+
+            return Err(ProxyError::SignalApi(format!(
+                "Set username failed: {} - {}",
+                status, body
+            )));
+        }
+
+        let info: UsernameInfo = response.json().await.map_err(|e| {
+            ProxyError::SignalApi(format!("Failed to parse username response: {}", e))
+        })?;
+
+        debug!(phone_number = %phone_number, username = ?info.username, "Username set successfully");
+        Ok(info)
+    }
+
+    /// Delete username for a phone number.
+    #[instrument(skip(self))]
+    pub async fn delete_username(&self, phone_number: &str) -> Result<(), ProxyError> {
+        let encoded_number = encode(phone_number);
+        let url = format!("{}/v1/accounts/{}/username", self.base_url, encoded_number);
+
+        debug!(url = %url, "Sending delete username request");
+
+        let response = self.client.delete(&url).send().await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            warn!(status = %status, body = %body, "Signal delete username failed");
+
+            return Err(ProxyError::SignalApi(format!(
+                "Delete username failed: {} - {}",
+                status, body
+            )));
+        }
+
+        debug!(phone_number = %phone_number, "Username deleted successfully");
+        Ok(())
+    }
 }
 
 /// Account information from Signal CLI API.
@@ -216,6 +313,28 @@ struct RegisterRequestBody {
     captcha: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     use_voice: Option<bool>,
+}
+
+/// Request body for profile update.
+#[derive(Debug, Clone, Serialize)]
+struct ProfileRequestBody {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    about: Option<String>,
+}
+
+/// Request body for username.
+#[derive(Debug, Clone, Serialize)]
+struct UsernameRequestBody {
+    username: String,
+}
+
+/// Response from username endpoint.
+#[derive(Debug, Clone, Deserialize)]
+pub struct UsernameInfo {
+    pub username: Option<String>,
+    pub username_link: Option<String>,
 }
 
 #[cfg(test)]
