@@ -17,3 +17,6 @@ docker/.env
 # macOS
 .DS_Store
 phala.env
+
+# Git worktrees
+.worktrees/
