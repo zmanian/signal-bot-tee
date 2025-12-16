@@ -175,10 +175,10 @@ impl VerifyHandler {
             }
             lines.push(String::new());
 
-            lines.push("2. **Verify Quote Signature:** Use the Phala verification portal".into());
-            lines.push("   - Go to: https://proof.phala.network".into());
-            lines.push("   - Paste the TDX quote (base64) above".into());
-            lines.push("   - The quote signature is verified by Intel TDX hardware".into());
+            lines.push("2. **Verify Quote Signature:** Use the TEE Attestation Explorer".into());
+            lines.push("   - Go to: https://proof.t16z.com".into());
+            lines.push("   - Paste the TDX quote (hex format) or upload as binary".into());
+            lines.push("   - The quote signature is verified against Intel TDX hardware".into());
             lines.push(String::new());
 
             lines.push("3. **Verify Docker Compose:** Check that compose_hash matches the expected configuration".into());
@@ -190,7 +190,7 @@ impl VerifyHandler {
         }
 
         lines.push(String::new());
-        lines.push("**NEAR AI:** Verify separately at https://near.ai/verify".into());
+        lines.push("**NEAR AI:** Verify separately at https://docs.near.ai/cloud/verification/".into());
 
         lines.join("\n")
     }
@@ -391,7 +391,7 @@ mod tests {
         assert!(response.contains("Verify Report Data"));
         assert!(response.contains("Verify Quote Signature"));
         assert!(response.contains("Verify Docker Compose"));
-        assert!(response.contains("https://proof.phala.network"));
+        assert!(response.contains("https://proof.t16z.com"));
         assert!(response.contains("https://github.com/zmanian/signal-bot-tee"));
         assert!(response.contains("xxd -p"));
     }

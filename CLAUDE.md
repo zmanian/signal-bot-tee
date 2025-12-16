@@ -130,7 +130,7 @@ docker inspect --format='{{index .RepoDigests 0}}' bbernhard/signal-cli-rest-api
 
 #### Step 4: Verify on Phala Portal
 
-Visit https://proof.phala.network and:
+Visit https://proof.t16z.com and:
 1. Enter the App ID from `!verify`
 2. Confirm the TEE type is Intel TDX
 3. Confirm the compose hash matches Step 2
@@ -149,7 +149,7 @@ Visit https://proof.phala.network and:
 
 - That the Signal CLI image itself is trustworthy (you trust bbernhard's image)
 - Network-level metadata (timing, message sizes) is still visible to operator
-- That NEAR AI is running in a TEE (verify separately at https://near.ai/verify)
+- That NEAR AI is running in a TEE (verify separately at https://docs.near.ai/cloud/verification/)
 
 #### Trust Summary
 
