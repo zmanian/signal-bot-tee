@@ -13,6 +13,7 @@ secrecy = "0.8"
 tracing = "0.1"
 tokio = { version = "1", features = ["time"] }
 meval = "0.2"
+urlencoding = "2.1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
