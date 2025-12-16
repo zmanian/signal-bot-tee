@@ -40,6 +40,7 @@ body {
   color: var(--text-primary);
   overflow-x: hidden;
   position: relative;
+  line-height: 1.6;
 }
 
 /* Background Grid/Glow */
@@ -260,19 +261,19 @@ h1, h2, h3 {
 /* Container & Layout */
 .container {
   width: 100%;
-  max-width: 1200px;
+  max-width: 1400px;
   margin: 0 auto;
-  padding: 0 24px;
+  padding: 0 32px;
   position: relative;
   z-index: 1;
 }
 
 .section {
-  padding: 80px 0;
+  padding: 120px 0;
 }
 
 @media (max-width: 768px) {
   .section {
-    padding: 48px 0;
+    padding: 80px 0;
   }
 }

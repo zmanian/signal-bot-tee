@@ -25,20 +25,20 @@ export function BotCard({ bot, index }: BotCardProps) {
       initial={{ opacity: 0, y: 30 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, delay: index * 0.1 }}
-      className="glass-card p-6 md:p-8"
+      className="glass-card p-8 md:p-10"
     >
       {/* Header */}
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[var(--accent-start)] to-[var(--accent-end)] flex items-center justify-center text-white text-xl font-bold shadow-lg">
+      <div className="flex items-start justify-between mb-6">
+        <div className="flex items-center gap-5">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[var(--accent-start)] to-[var(--accent-end)] flex items-center justify-center text-white text-2xl font-bold shadow-lg">
             {bot.username.charAt(0).toUpperCase()}
           </div>
           <div>
-            <h3 className="text-xl font-semibold text-[var(--text-primary)]">@{bot.username}</h3>
-            <p className="text-sm text-[var(--text-muted)]">Signal Bot</p>
+            <h3 className="text-2xl font-semibold text-[var(--text-primary)]">@{bot.username}</h3>
+            <p className="text-base text-[var(--text-muted)]">Signal Bot</p>
           </div>
         </div>
-        <div className="flex items-center gap-2 text-emerald-400 text-sm font-medium bg-emerald-500/10 px-3 py-1.5 rounded-full">
+        <div className="flex items-center gap-2 text-emerald-400 text-sm font-medium bg-emerald-500/10 px-4 py-2 rounded-full">
           <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
           Online
         </div>
@@ -46,16 +46,16 @@ export function BotCard({ bot, index }: BotCardProps) {
 
       {/* Description and Model */}
       {(bot.description || bot.model) && (
-        <div className="mb-6 space-y-3">
+        <div className="mb-8 space-y-4">
           {bot.description && (
-            <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
+            <p className="text-base text-[var(--text-secondary)] leading-relaxed">
               {bot.description}
             </p>
           )}
           {bot.model && (
-            <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
-              <Cpu className="w-3.5 h-3.5" />
-              <span className="font-mono bg-white/5 px-2 py-1 rounded-md">
+            <div className="flex items-center gap-2 text-sm text-[var(--text-muted)]">
+              <Cpu className="w-4 h-4" />
+              <span className="font-mono bg-white/5 px-2.5 py-1 rounded-md">
                 {bot.model}
               </span>
             </div>
@@ -64,22 +64,22 @@ export function BotCard({ bot, index }: BotCardProps) {
       )}
 
       {/* Spacer when no description/model */}
-      {!bot.description && !bot.model && <div className="mb-2" />}
+      {!bot.description && !bot.model && <div className="mb-4" />}
 
       {/* Actions */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-4">
+      <div className="flex flex-col sm:flex-row gap-4 mb-6">
         <a
           href={bot.signal_link}
           target="_blank"
           rel="noopener noreferrer"
-          className="glass-button glass-button-primary flex items-center justify-center gap-2 flex-1"
+          className="glass-button glass-button-primary flex items-center justify-center gap-2 flex-1 py-4 text-base"
         >
           <MessageCircle className="w-5 h-5" />
           Message on Signal
         </a>
         <button
           onClick={() => setExpanded(!expanded)}
-          className="glass-button flex items-center justify-center gap-2"
+          className="glass-button flex items-center justify-center gap-2 py-4 text-base"
         >
           <Shield className="w-5 h-5" />
           Verify Security

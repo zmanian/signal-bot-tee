@@ -45,7 +45,7 @@ export function Hero() {
           initial={{ opacity: 0, y: 40 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.3 }}
-          className="flex flex-col md:flex-row gap-4 justify-center items-center mb-12"
+          className="flex flex-col md:flex-row gap-6 justify-center items-center mb-16"
         >
           <TrustCard
             icon={<Shield className="w-5 h-5" />}
@@ -104,9 +104,9 @@ function TrustCard({
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.5, delay }}
       whileHover={{ scale: 1.02 }}
-      className="glass-card px-6 py-4 flex items-center gap-4 min-w-[280px]"
+      className="glass-card px-8 py-6 flex items-center gap-5 min-w-[320px]"
     >
-      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--accent-start)] to-[var(--accent-end)] flex items-center justify-center text-white">
+      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[var(--accent-start)] to-[var(--accent-end)] flex items-center justify-center text-white">
         {icon}
       </div>
       <div className="text-left">

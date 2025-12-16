@@ -51,12 +51,12 @@ export function VerificationPanel() {
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="glass-card p-6 md:p-8"
+      className="glass-card p-8 md:p-10"
     >
-      <h2 className="text-2xl font-bold text-[var(--text-primary)] mb-6">Security Verification</h2>
+      <h2 className="text-2xl font-bold text-[var(--text-primary)] mb-8">Security Verification</h2>
 
       {/* Simple trust indicators */}
-      <div className="space-y-3 mb-8">
+      <div className="space-y-4 mb-10">
         <TrustIndicator
           loading={isLoading}
           verified={displayAttestation?.in_tee}
@@ -80,7 +80,7 @@ export function VerificationPanel() {
       {/* Technical details toggle */}
       <button
         onClick={() => setShowTechnical(!showTechnical)}
-        className="w-full glass-button flex items-center justify-center gap-2 mb-4"
+        className="w-full glass-button flex items-center justify-center gap-2 mb-4 py-4"
       >
         View Full Attestation
         <motion.div
@@ -100,7 +100,7 @@ export function VerificationPanel() {
             transition={{ duration: 0.3 }}
             className="overflow-hidden"
           >
-            <div className="space-y-6 pt-4 border-t border-white/5">
+            <div className="space-y-8 pt-6 border-t border-white/5">
               {/* Interactive challenge verification */}
               <div>
                 <h4 className="font-medium text-[var(--text-primary)] mb-3">Liveness Verification</h4>
@@ -222,7 +222,7 @@ function TrustIndicator({
     <motion.div
       initial={{ opacity: 0, x: -20 }}
       animate={{ opacity: 1, x: 0 }}
-      className="trust-indicator"
+      className="trust-indicator p-4 md:p-5"
     >
       <div className="check-icon">
         {loading ? (

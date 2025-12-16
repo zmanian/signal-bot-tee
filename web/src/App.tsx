@@ -64,12 +64,12 @@ function App() {
               </button>
             </motion.div>
           ) : botsLoading ? (
-            <div className="grid md:grid-cols-2 gap-6 max-w-4xl mx-auto">
+            <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
               <BotCardSkeleton />
               <BotCardSkeleton />
             </div>
           ) : bots && bots.length > 0 ? (
-            <div className="grid md:grid-cols-2 gap-6 max-w-4xl mx-auto">
+            <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
               {bots.map((bot, index) => (
                 <BotCard key={bot.username} bot={bot} index={index} />
               ))}
