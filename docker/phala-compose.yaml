@@ -8,11 +8,14 @@ services:
     container_name: signal-api
     environment:
       - MODE=normal
-      - AUTO_RECEIVE_SCHEDULE=
+      # Receive messages every minute (5-field cron format)
+      - AUTO_RECEIVE_SCHEDULE=* * * * *
       - LOG_LEVEL=info
-    # Port closed - signal-api only accessible internally via proxy
+    # Temporarily exposed for debugging registration
+    ports:
+      - "8080:8080"
     volumes:
-      - signal-config-v2:/home/.local/share/signal-cli
+      - signal-config-v3:/home/.local/share/signal-cli
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/v1/health"]
       interval: 30s
@@ -79,7 +82,7 @@ services:
     restart: unless-stopped
 
 volumes:
-  signal-config-v2:
+  signal-config-v3:
     driver: local
   registry-data:
     driver: local
