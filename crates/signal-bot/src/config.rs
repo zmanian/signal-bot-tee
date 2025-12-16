@@ -213,7 +213,7 @@ fn default_signal_service() -> String {
 }
 
 fn default_poll_interval() -> Duration {
-    Duration::from_secs(1)
+    Duration::from_millis(200)
 }
 
 fn default_near_ai_url() -> String {

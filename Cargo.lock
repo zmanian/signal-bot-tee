@@ -2233,6 +2233,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-test",
+ "tools",
  "tracing",
  "tracing-subscriber",
 ]
