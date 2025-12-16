@@ -198,3 +198,11 @@ pub struct AttestationReport {
     #[serde(flatten)]
     pub extra: serde_json::Value,
 }
+
+/// Response from chat with tools.
+#[derive(Debug, Clone)]
+pub struct ChatResponseWithTools {
+    pub content: Option<String>,
+    pub tool_calls: Option<Vec<ToolCall>>,
+    pub finish_reason: String,
+}
