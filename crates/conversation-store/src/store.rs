@@ -155,7 +155,9 @@ impl ConversationStore {
         if let Some(p) = prompt {
             messages.push(OpenAiMessage {
                 role: "system".into(),
-                content: p,
+                content: Some(p),
+                tool_calls: None,
+                tool_call_id: None,
             });
         }
 
@@ -165,6 +167,8 @@ impl ConversationStore {
                 messages.push(OpenAiMessage {
                     role: msg.role,
                     content: msg.content,
+                    tool_calls: msg.tool_calls,
+                    tool_call_id: msg.tool_call_id,
                 });
             }
         }
