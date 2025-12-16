@@ -135,11 +135,11 @@ fn default_poll_interval() -> Duration {
 }
 
 fn default_near_ai_url() -> String {
-    "https://api.near.ai/v1".into()
+    "https://cloud-api.near.ai/v1".into()
 }
 
 fn default_model() -> String {
-    "llama-3.3-70b".into()
+    "deepseek-ai/DeepSeek-V3.1".into()
 }
 
 fn default_timeout() -> Duration {
@@ -179,7 +179,9 @@ impl Config {
             .add_source(
                 config::Environment::default()
                     .separator("__")
-                    .try_parsing(true),
+                    // Note: try_parsing(true) would parse +16504928286 as a positive number
+                    // stripping the + prefix. Keep strings as strings.
+                    .try_parsing(false),
             )
             .build()
             .context("Failed to build configuration")?;

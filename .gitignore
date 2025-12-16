@@ -1,8 +1,12 @@
 # Build artifacts
 /target/
 
-# Environment files
+# Environment files (NEVER commit these)
 .env
+.env.*
+!.env.example
+docker/.env
+**/secrets/
 
 # IDE
 .idea/

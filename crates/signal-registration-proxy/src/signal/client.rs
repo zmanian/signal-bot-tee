@@ -49,24 +49,17 @@ impl SignalRegistrationClient {
         use_voice: bool,
     ) -> Result<(), ProxyError> {
         let encoded_number = encode(phone_number);
+        let url = format!("{}/v1/register/{}", self.base_url, encoded_number);
 
-        let mut url = format!("{}/v1/register/{}", self.base_url, encoded_number);
+        // Build JSON body with captcha and use_voice
+        let body = RegisterRequestBody {
+            captcha: captcha.map(String::from),
+            use_voice: Some(use_voice),
+        };
 
-        // Add query parameters
-        let mut params = Vec::new();
-        if use_voice {
-            params.push("voice=true".to_string());
-        }
-        if let Some(token) = captcha {
-            params.push(format!("captcha={}", encode(token)));
-        }
-        if !params.is_empty() {
-            url = format!("{}?{}", url, params.join("&"));
-        }
+        debug!(url = %url, use_voice = %use_voice, has_captcha = %captcha.is_some(), "Sending registration request");
 
-        debug!(url = %url, "Sending registration request");
-
-        let response = self.client.post(&url).send().await?;
+        let response = self.client.post(&url).json(&body).send().await?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -214,6 +207,15 @@ pub struct AccountInfo {
     pub uuid: Option<String>,
     #[serde(default)]
     pub username: Option<String>,
+}
+
+/// Request body for registration endpoint.
+#[derive(Debug, Clone, Serialize)]
+struct RegisterRequestBody {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    captcha: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    use_voice: Option<bool>,
 }
 
 #[cfg(test)]

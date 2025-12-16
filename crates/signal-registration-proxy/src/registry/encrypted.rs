@@ -8,6 +8,7 @@ use aes_gcm::{
 };
 use dstack_client::DstackClient;
 use rand::RngCore;
+use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use tokio::fs;
 use tracing::{debug, info, warn};
@@ -22,6 +23,8 @@ const NONCE_SIZE: usize = 12;
 pub struct EncryptedStore {
     dstack: DstackClient,
     storage_path: PathBuf,
+    /// Cached key derived from AppInfo (used when DeriveKey not available)
+    cached_key: Option<[u8; 32]>,
 }
 
 impl EncryptedStore {
@@ -30,6 +33,16 @@ impl EncryptedStore {
         Self {
             dstack,
             storage_path,
+            cached_key: None,
+        }
+    }
+
+    /// Create a new encrypted store with a pre-derived key.
+    pub fn with_key(dstack: DstackClient, storage_path: PathBuf, key: [u8; 32]) -> Self {
+        Self {
+            dstack,
+            storage_path,
+            cached_key: Some(key),
         }
     }
 
@@ -39,18 +52,61 @@ impl EncryptedStore {
     /// which means:
     /// - Same deployment can always decrypt its data
     /// - Different deployment (modified compose) cannot decrypt old data
+    ///
+    /// Tries DeriveKey endpoint first; falls back to deriving from AppInfo
+    /// (compose_hash + app_id) if DeriveKey is not available.
     async fn derive_key(&self) -> Result<[u8; 32], ProxyError> {
-        let key_bytes = self.dstack.derive_key(KEY_DERIVATION_PATH, None).await?;
-
-        if key_bytes.len() < 32 {
-            return Err(ProxyError::Encryption(format!(
-                "Derived key too short: {} bytes (need 32)",
-                key_bytes.len()
-            )));
+        // Use cached key if available
+        if let Some(key) = self.cached_key {
+            debug!("Using cached encryption key");
+            return Ok(key);
         }
 
+        // Try the DeriveKey endpoint first
+        match self.dstack.derive_key(KEY_DERIVATION_PATH, None).await {
+            Ok(key_bytes) => {
+                if key_bytes.len() < 32 {
+                    return Err(ProxyError::Encryption(format!(
+                        "Derived key too short: {} bytes (need 32)",
+                        key_bytes.len()
+                    )));
+                }
+                let mut key = [0u8; 32];
+                key.copy_from_slice(&key_bytes[..32]);
+                info!("Using DeriveKey endpoint for encryption key");
+                return Ok(key);
+            }
+            Err(e) => {
+                warn!(
+                    "DeriveKey endpoint not available, falling back to AppInfo-derived key: {}",
+                    e
+                );
+            }
+        }
+
+        // Fall back to deriving key from AppInfo (compose_hash + app_id)
+        let app_info = self.dstack.get_app_info().await.map_err(|e| {
+            ProxyError::Encryption(format!("Failed to get AppInfo for key derivation: {}", e))
+        })?;
+
+        let compose_hash = app_info.compose_hash.as_deref().unwrap_or("unknown");
+        let app_id = app_info.app_id.as_deref().unwrap_or("unknown");
+
+        // Derive key: SHA256(compose_hash || app_id || key_derivation_path)
+        let mut hasher = Sha256::new();
+        hasher.update(compose_hash.as_bytes());
+        hasher.update(app_id.as_bytes());
+        hasher.update(KEY_DERIVATION_PATH.as_bytes());
+        let hash = hasher.finalize();
+
         let mut key = [0u8; 32];
-        key.copy_from_slice(&key_bytes[..32]);
+        key.copy_from_slice(&hash);
+
+        info!(
+            "Using AppInfo-derived encryption key (compose_hash: {}, app_id: {})",
+            compose_hash, app_id
+        );
+
         Ok(key)
     }
 

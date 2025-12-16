@@ -151,18 +151,17 @@ impl NearAiClient {
     }
 
     /// List available models.
+    /// Note: NEAR AI Cloud doesn't have a /models endpoint, so we return known models.
     #[instrument(skip(self))]
     pub async fn list_models(&self) -> Result<Vec<Model>, NearAiError> {
-        let response = self
-            .client
-            .get(format!("{}/models", self.base_url))
-            .header("Authorization", format!("Bearer {}", self.api_key.expose_secret()))
-            .send()
-            .await?;
-
-        self.handle_response::<ModelsResponse>(response)
-            .await
-            .map(|r| r.data)
+        // NEAR AI Cloud doesn't expose a /models endpoint
+        // Return a list of known available models (as of Dec 2025)
+        Ok(vec![
+            Model { id: "deepseek-ai/DeepSeek-V3.1".to_string(), object: "model".to_string(), created: 0, owned_by: "deepseek".to_string() },
+            Model { id: "openai/gpt-oss-120b".to_string(), object: "model".to_string(), created: 0, owned_by: "openai".to_string() },
+            Model { id: "Qwen/Qwen3-30B-A3B-Instruct-2507".to_string(), object: "model".to_string(), created: 0, owned_by: "alibaba".to_string() },
+            Model { id: "zai-org/GLM-4.6".to_string(), object: "model".to_string(), created: 0, owned_by: "zhipu".to_string() },
+        ])
     }
 
     /// Get attestation report from NEAR AI.

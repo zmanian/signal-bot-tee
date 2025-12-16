@@ -596,3 +596,90 @@ Phala Cloud encrypts these at rest and decrypts only inside the TEE:
 **No TEE attestation**:
 - Running locally (not in Dstack) is expected - attestation only works in TEE
 - In TEE, check `/var/run/dstack.sock` exists
+
+### Debugging Signal Registration Issues
+
+If registration via the proxy returns success but no SMS/call is received, follow this debugging process:
+
+#### Step 1: Check Proxy Debug Endpoints
+
+The registration proxy has debug endpoints to inspect Signal CLI state:
+
+```bash
+# List accounts Signal CLI knows about (not our proxy registry)
+curl https://YOUR_ENDPOINT-8081.dstack-pha-prod9.phala.network/v1/debug/signal-accounts
+
+# Force unregister from Signal CLI (bypasses proxy registry check)
+curl -X POST https://YOUR_ENDPOINT-8081.dstack-pha-prod9.phala.network/v1/debug/force-unregister/+1YOURNUMBER
+```
+
+#### Step 2: Expose Signal CLI Directly (Temporary)
+
+If the proxy seems to work but registration still fails, expose Signal CLI port 8080 temporarily to bypass the proxy:
+
+```yaml
+# In phala-compose.yaml, add to signal-api service:
+ports:
+  - "8080:8080"
+```
+
+Deploy the change, then test directly:
+
+```bash
+# Check Signal CLI health
+curl https://YOUR_ENDPOINT-8080.dstack-pha-prod9.phala.network/v1/health
+
+# List accounts directly
+curl https://YOUR_ENDPOINT-8080.dstack-pha-prod9.phala.network/v1/accounts
+
+# Register directly (with captcha from signalcaptchas.org/registration/generate.html)
+curl -X POST https://YOUR_ENDPOINT-8080.dstack-pha-prod9.phala.network/v1/register/+1YOURNUMBER \
+  -H "Content-Type: application/json" \
+  -d '{"captcha": "signalcaptcha://..."}'
+```
+
+#### Step 3: Common Errors and Solutions
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `"Account is already registered (IOException)"` | Stale data in `signal-config` volume | Rename volume to force fresh start (e.g., `signal-config-v2`) |
+| `"java.net.SocketTimeoutException: timeout"` | Network issue or rate limiting | Retry; may be transient |
+| `"Captcha required"` | Signal requires captcha | Get token from signalcaptchas.org/registration/generate.html |
+| HTTP 201 but no SMS | Success! Code was sent | Check phone; try voice if SMS blocked |
+| HTTP 400 with captcha error | Captcha expired | Captchas expire quickly; get a fresh one |
+
+#### Step 4: Stale Volume Fix
+
+The most common issue is **stale data in the Signal CLI volume**. Signal CLI stores registration state locally, and corrupt/partial data causes `IOException` errors.
+
+**Symptoms**:
+- Proxy returns success but no SMS arrives
+- Direct Signal CLI calls return `"Account is already registered (IOException)"`
+- `curl /v1/accounts` shows the number even after "unregistering"
+
+**Solution**: Force a fresh volume by renaming it:
+
+```yaml
+# Change in phala-compose.yaml:
+volumes:
+  - signal-config-v2:/home/.local/share/signal-cli  # was signal-config
+
+# Also update volumes section:
+volumes:
+  signal-config-v2:
+    driver: local
+```
+
+Then redeploy. This gives Signal CLI a clean data directory.
+
+#### Step 5: After Debugging
+
+**Important**: Remove the debug port exposure after fixing:
+
+```yaml
+# Remove from signal-api service:
+ports:
+  - "8080:8080"
+```
+
+This keeps Signal CLI only accessible internally via the proxy, which is the secure configuration.

@@ -64,6 +64,9 @@ pub fn create_router_with_rate_limit(state: AppState, rate_limit: RateLimitState
         .route("/v1/status/:number", get(handlers::get_status))
         .route("/v1/accounts", get(handlers::list_accounts))
         .route("/v1/unregister/:number", delete(handlers::unregister))
+        // Debug endpoints
+        .route("/v1/debug/signal-accounts", get(handlers::debug_signal_accounts))
+        .route("/v1/debug/force-unregister/:number", post(handlers::debug_force_unregister))
         .layer(axum_middleware::from_fn_with_state(
             rate_limit.clone(),
             rate_limit_middleware,

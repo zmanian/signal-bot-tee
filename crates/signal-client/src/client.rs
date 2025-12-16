@@ -5,6 +5,7 @@ use crate::types::*;
 use reqwest::Client;
 use std::time::Duration;
 use tracing::{debug, instrument, warn};
+use urlencoding::encode;
 
 /// Signal CLI REST API client.
 #[derive(Clone)]
@@ -49,9 +50,10 @@ impl SignalClient {
     /// Get account information.
     #[instrument(skip(self))]
     pub async fn get_account(&self) -> Result<Account, SignalError> {
+        let encoded_number = encode(&self.phone_number);
         let response = self
             .client
-            .get(format!("{}/v1/accounts/{}", self.base_url, self.phone_number))
+            .get(format!("{}/v1/accounts/{}", self.base_url, encoded_number))
             .send()
             .await?;
 
@@ -66,11 +68,12 @@ impl SignalClient {
     /// Receive pending messages.
     #[instrument(skip(self))]
     pub async fn receive(&self) -> Result<Vec<IncomingMessage>, SignalError> {
+        let encoded_number = encode(&self.phone_number);
         let response = self
             .client
             .get(format!(
                 "{}/v1/receive/{}",
-                self.base_url, self.phone_number
+                self.base_url, encoded_number
             ))
             .send()
             .await?;
@@ -96,10 +99,7 @@ impl SignalClient {
 
         let response = self
             .client
-            .post(format!(
-                "{}/v2/send/{}",
-                self.base_url, self.phone_number
-            ))
+            .post(format!("{}/v2/send", self.base_url))
             .json(&request)
             .send()
             .await?;

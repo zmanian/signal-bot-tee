@@ -128,6 +128,135 @@ cp ../.env.example .env
 docker-compose up -d
 ```
 
+## Multitenant Registration Proxy
+
+The signal-registration-proxy provides a secure API for registering multiple Signal phone numbers. Each tenant (phone number) has isolated conversation history and can be managed independently.
+
+### Registration API
+
+Base URL: `https://[your-deployment]-8081.dstack-prod5.phala.network`
+
+#### Register a Phone Number
+
+Initiates registration and sends SMS verification code.
+
+```bash
+curl -X POST https://[base-url]/v1/register/+1234567890 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "captcha": "signalcaptcha://signal-hcaptcha...",
+    "use_voice": false,
+    "ownership_secret": "your-secret-for-verification"
+  }'
+```
+
+**Parameters:**
+- `captcha` (optional): Captcha token from [signalcaptchas.org](https://signalcaptchas.org/registration/generate.html) - required if Signal requests it
+- `use_voice` (optional): `true` for voice call instead of SMS
+- `ownership_secret` (optional): Secret to prove ownership for future operations
+
+**Response:**
+```json
+{
+  "phone_number": "+1234567890",
+  "status": "pending",
+  "message": "Verification code sent. Use /v1/register/{number}/verify/{code} to complete."
+}
+```
+
+#### Verify Registration
+
+Submit the SMS/voice verification code.
+
+```bash
+curl -X POST https://[base-url]/v1/register/+1234567890/verify/123456 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "ownership_secret": "your-secret-for-verification",
+    "pin": "optional-signal-pin"
+  }'
+```
+
+**Parameters:**
+- `ownership_secret`: Must match the secret used during registration
+- `pin` (optional): Signal PIN if the account has one set
+
+#### Check Registration Status
+
+```bash
+curl https://[base-url]/v1/status/+1234567890
+```
+
+**Response:**
+```json
+{
+  "phone_number": "+1234567890",
+  "status": "verified",
+  "registered_at": "2025-01-15T10:30:00Z"
+}
+```
+
+#### List All Registered Accounts
+
+```bash
+curl https://[base-url]/v1/accounts
+```
+
+**Response:**
+```json
+{
+  "accounts": [
+    {
+      "phone_number": "+1234567890",
+      "status": "verified",
+      "registered_at": "2025-01-15T10:30:00Z"
+    }
+  ],
+  "total": 1
+}
+```
+
+#### Unregister a Phone Number
+
+```bash
+curl -X DELETE https://[base-url]/v1/unregister/+1234567890 \
+  -H "Content-Type: application/json" \
+  -d '{"ownership_secret": "your-secret-for-verification"}'
+```
+
+### Health Check
+
+```bash
+curl https://[base-url]/health
+```
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "registry_count": 1,
+  "signal_api_healthy": true
+}
+```
+
+### Multitenant Isolation
+
+Each registered phone number is a separate tenant with:
+
+- **Isolated conversations**: Each phone number has its own conversation history
+- **Separate storage**: Registry entries encrypted with TEE-derived keys
+- **Rate limiting**: Per-number rate limits prevent abuse
+- **Ownership verification**: Operations require the secret used at registration
+
+### Registration Troubleshooting
+
+If registration fails with "Account is already registered":
+1. The Signal CLI may have stale data from a previous registration
+2. Use the debug endpoint to force unregister: `POST /v1/debug/force-unregister/+1234567890`
+3. Retry registration with a fresh captcha
+
+See [CLAUDE.md](./CLAUDE.md) for detailed debugging documentation.
+
 ## Configuration
 
 Environment variables:

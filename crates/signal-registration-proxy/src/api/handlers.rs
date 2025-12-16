@@ -55,10 +55,32 @@ pub async fn register_number(
     drop(registry);
 
     // Proxy to Signal CLI REST API
-    state
+    // If Signal says "already registered", try to unregister first and retry
+    let register_result = state
         .signal_client
         .register(&number, request.captcha.as_deref(), request.use_voice)
-        .await?;
+        .await;
+
+    if let Err(ProxyError::SignalApi(ref msg)) = register_result {
+        if msg.contains("already registered") {
+            info!(phone_number = %number, "Account already registered, attempting to unregister and retry");
+            // Try to unregister the stale registration
+            if state.signal_client.unregister(&number).await.is_ok() {
+                // Retry registration
+                state
+                    .signal_client
+                    .register(&number, request.captcha.as_deref(), request.use_voice)
+                    .await?;
+            } else {
+                // Unregister failed, return original error
+                return Err(register_result.unwrap_err());
+            }
+        } else {
+            return Err(register_result.unwrap_err());
+        }
+    } else {
+        register_result?;
+    }
 
     // Record the registration attempt
     let record = PhoneNumberRecord::new_pending(number.clone(), request.ownership_secret.as_deref());
@@ -197,4 +219,37 @@ pub async fn unregister(
         status: "unregistered".to_string(),
         message: "Phone number unregistered successfully.".to_string(),
     }))
+}
+
+/// Debug endpoint: List accounts registered in Signal CLI (not our registry).
+pub async fn debug_signal_accounts(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, ProxyError> {
+    let accounts = state.signal_client.list_accounts().await?;
+    Ok(Json(serde_json::json!({
+        "signal_cli_accounts": accounts,
+        "note": "These are accounts Signal CLI knows about, not our proxy registry"
+    })))
+}
+
+/// Debug endpoint: Force unregister a number from Signal CLI (bypasses registry check).
+pub async fn debug_force_unregister(
+    State(state): State<AppState>,
+    Path(number): Path<String>,
+) -> Result<Json<serde_json::Value>, ProxyError> {
+    let number = normalize_phone_number(&number).map_err(ProxyError::InvalidPhoneNumber)?;
+    warn!(phone_number = %number, "Force unregister requested (debug endpoint)");
+
+    state.signal_client.unregister(&number).await?;
+
+    // Also remove from our registry if present
+    let mut registry = state.registry.write().await;
+    registry.remove(&number);
+    state.store.save(&registry).await?;
+
+    Ok(Json(serde_json::json!({
+        "status": "unregistered",
+        "phone_number": number,
+        "message": "Force unregistered from Signal CLI"
+    })))
 }
