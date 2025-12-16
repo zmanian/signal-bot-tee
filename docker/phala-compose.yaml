@@ -41,6 +41,8 @@ services:
       - CONVERSATION__TTL=${CONVERSATION_TTL:-24h}
       # Bot settings
       - BOT__LOG_LEVEL=${LOG_LEVEL:-info}
+      # Tools configuration
+      - TOOLS__WEB_SEARCH__API_KEY=${TOOLS_WEB_SEARCH_API_KEY}
       # Dstack TEE socket - provided by Phala CVM
       - DSTACK__SOCKET_PATH=/var/run/dstack.sock
     volumes:
