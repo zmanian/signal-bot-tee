@@ -15,9 +15,48 @@ use signal_client::{MessageReceiver, SignalClient};
 use std::sync::Arc;
 use tokio::signal;
 use tokio_stream::StreamExt;
-use tools::ToolRegistry;
+use tools::{ToolRegistry, builtin::{CalculatorTool, WeatherTool, WebSearchTool}};
 use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+
+/// Create and configure tool registry based on config.
+fn create_tool_registry(config: &crate::config::ToolsConfig) -> ToolRegistry {
+    let mut registry = ToolRegistry::new();
+
+    if !config.enabled {
+        info!("Tools system disabled by configuration");
+        return registry;
+    }
+
+    // Calculator - always available (no API key needed)
+    if config.calculator.enabled {
+        registry.register(Arc::new(CalculatorTool::new()));
+        info!("Registered tool: calculate");
+    }
+
+    // Weather - always available (no API key needed)
+    if config.weather.enabled {
+        registry.register(Arc::new(WeatherTool::new()));
+        info!("Registered tool: get_weather");
+    }
+
+    // Web search - requires API key
+    if config.web_search.enabled {
+        if let Some(api_key) = &config.web_search.api_key {
+            let tool = WebSearchTool::new(api_key.clone())
+                .with_max_results(config.web_search.max_results);
+            registry.register(Arc::new(tool));
+            info!("Registered tool: web_search (max_results: {})", config.web_search.max_results);
+        } else {
+            warn!("Web search tool enabled but TOOLS__WEB_SEARCH__API_KEY not set - skipping");
+        }
+    }
+
+    let enabled_count = registry.list_enabled().len();
+    info!("Tool registry ready with {} enabled tools", enabled_count);
+
+    registry
+}
 
 #[tokio::main]
 async fn main() -> AppResult<()> {
@@ -52,9 +91,8 @@ async fn main() -> AppResult<()> {
             .context("Failed to create Signal client")?,
     );
 
-    // Create tool registry
-    let tool_registry = Arc::new(ToolRegistry::new());
-    // TODO: Register tools based on config (will be done in future tasks)
+    // Create tool registry based on config
+    let tool_registry = Arc::new(create_tool_registry(&config.tools));
 
     // Health checks
     if near_ai.health_check().await {
