@@ -1,0 +1,15 @@
+# Simple test deployment - just signal-api
+services:
+  signal-api:
+    image: bbernhard/signal-cli-rest-api@sha256:04ee57f9819a90c89fbee46f74e080a032f5f05decf6e4b4a4e1f45d050ed9c8
+    container_name: signal-api
+    environment:
+      - MODE=normal
+      - LOG_LEVEL=info
+    volumes:
+      - signal-config:/home/.local/share/signal-cli
+    restart: unless-stopped
+
+volumes:
+  signal-config:
+    driver: local

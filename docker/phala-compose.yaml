@@ -8,8 +8,9 @@ services:
     container_name: signal-api
     environment:
       - MODE=normal
-      # Receive messages every minute (5-field cron format)
-      - AUTO_RECEIVE_SCHEDULE=* * * * *
+      # NOTE: Do NOT use AUTO_RECEIVE_SCHEDULE - it conflicts with signal-bot's polling!
+      # The signal-bot polls /v1/receive directly. AUTO_RECEIVE_SCHEDULE would consume
+      # messages before the bot can get them.
       - LOG_LEVEL=info
     # Port closed - signal-api only accessible internally
     volumes:

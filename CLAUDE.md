@@ -565,6 +565,46 @@ Phala Cloud encrypts these at rest and decrypts only inside the TEE:
 | `NEAR_AI_BASE_URL` | https://cloud-api.near.ai/v1 |
 | `NEAR_AI_MODEL` | AI model (default: deepseek-ai/DeepSeek-V3.1) |
 
+#### Updating the Deployed Image
+
+Phala CVMs cache Docker images. To deploy a new version of signal-bot:
+
+**Option A: Upgrade Existing CVM (Recommended)**
+
+```bash
+# Build and push new image
+cd docker && docker-compose build signal-bot
+docker tag docker-signal-bot:latest zaki1iqlusion/signal-bot-tee:latest
+docker push zaki1iqlusion/signal-bot-tee:latest
+
+# Upgrade the CVM (pulls fresh image)
+phala deploy --uuid APP_ID --compose ./phala-compose.yaml
+```
+
+The `--uuid` flag upgrades an existing CVM rather than creating a new one.
+
+**Option B: Delete and Recreate**
+
+If upgrade fails or you need a completely fresh deployment:
+
+```bash
+# Delete old CVM
+phala cvms delete APP_ID
+
+# Deploy fresh
+phala deploy --name signal-bot-tee --compose ./phala-compose.yaml \
+  --vcpu 2 --memory 4096 --disk-size 20
+```
+
+**Note**: This creates a new CVM with a new App ID. Signal registration data is preserved in the volume.
+
+**Option C: Force Image Pull (Dashboard)**
+
+1. Go to https://cloud.phala.network/dashboard/cvm
+2. Select your CVM
+3. Click "Upgrade" → "Force Pull Images"
+4. This restarts containers with fresh image pulls
+
 #### Troubleshooting Phala Deployment
 
 **"Invalid API key"**: Make sure you're using an API Token from the dashboard (P logo → API Tokens), not an `sk-rp-...` registry key.
@@ -572,6 +612,8 @@ Phala Cloud encrypts these at rest and decrypts only inside the TEE:
 **Image pull fails**: Ensure your DockerHub image is public, or configure private registry credentials in Phala.
 
 **No attestation**: The dstack socket should be auto-mounted at `/var/run/dstack.sock` in Phala CVMs.
+
+**CVM restart/stop CLI errors**: The Phala CLI sometimes has API compatibility issues. Use the dashboard at https://cloud.phala.network/dashboard/cvm for restart/stop operations if CLI fails.
 
 ### Security Checklist
 
