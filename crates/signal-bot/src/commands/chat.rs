@@ -158,25 +158,30 @@ impl CommandHandler for ChatHandler {
             })
             .collect();
 
-        // Tool execution loop
+        // Tool execution loop - only offer tools on first iteration
+        let mut tools_executed = false;
         for iteration in 0..self.max_tool_iterations {
-            debug!("Tool execution loop iteration {}", iteration);
+            debug!("Tool execution loop iteration {}, tools_executed={}", iteration, tools_executed);
 
             // Build messages from conversation store
             let messages = self.build_messages(conversation_id).await?;
 
-            // Call NEAR AI with tools
+            // Only offer tools if we haven't executed any yet
+            // After tools execute once, force the model to give a text response
+            let tools_to_offer = if !tools_executed && !near_tools.is_empty() {
+                Some(&near_tools[..])
+            } else {
+                None
+            };
+
+            // Call NEAR AI with tools (or without if already executed)
             let response = match self
                 .near_ai
                 .chat_with_tools(
                     messages,
                     Some(0.7),
                     None,
-                    if near_tools.is_empty() {
-                        None
-                    } else {
-                        Some(&near_tools)
-                    },
+                    tools_to_offer,
                 )
                 .await
             {
@@ -203,8 +208,12 @@ impl CommandHandler for ChatHandler {
                 }
             };
 
-            // Check if response has tool calls
+            // Check if response has tool calls (must be non-empty)
             if let Some(tool_calls) = response.tool_calls {
+                if tool_calls.is_empty() {
+                    // Empty tool_calls array - treat as final response
+                    debug!("LLM returned empty tool_calls array, treating as final response");
+                } else {
                 debug!("LLM requested {} tool calls", tool_calls.len());
 
                 // Store assistant message with tool calls
@@ -258,11 +267,15 @@ impl CommandHandler for ChatHandler {
                         .await?;
                 }
 
+                // Mark that tools have been executed - don't offer them again
+                tools_executed = true;
+
                 // Continue loop to let LLM process tool results
                 continue;
-            }
+                }  // close else (non-empty tool_calls)
+            }  // close if let Some(tool_calls)
 
-            // No tool calls - this is the final response
+            // No tool calls (or empty array) - this is the final response
             let final_response = self.finalize_response(conversation_id, response.content).await?;
 
             info!(

@@ -225,7 +225,7 @@ fn default_model() -> String {
 }
 
 fn default_timeout() -> Duration {
-    Duration::from_secs(60)
+    Duration::from_secs(10)
 }
 
 fn default_ttl() -> Duration {

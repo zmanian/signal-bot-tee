@@ -27,21 +27,22 @@ services:
 
   signal-bot:
     # Image hosted on Docker Hub
-    image: zaki1iqlusion/signal-bot-tee:latest
+    image: zaki1iqlusion/signal-bot-tee:v0.12.0
     container_name: signal-bot
     environment:
       # Signal configuration - polls ALL registered accounts automatically
       - SIGNAL__SERVICE_URL=http://signal-api:8080
-      # NEAR AI configuration - secrets encrypted by Phala
-      - NEAR_AI__API_KEY=${NEAR_AI_API_KEY}
-      - NEAR_AI__BASE_URL=${NEAR_AI_BASE_URL:-https://cloud-api.near.ai/v1}
-      - NEAR_AI__MODEL=${NEAR_AI_MODEL:-deepseek-ai/DeepSeek-V3.1}
+      # NEAR AI configuration - hardcoded for debugging
+      - NEAR_AI__API_KEY=sk-0ac5a0df52334fca8c50f521ffb6e55a
+      - NEAR_AI__BASE_URL=https://cloud-api.near.ai/v1
+      - NEAR_AI__MODEL=deepseek-ai/DeepSeek-V3.1
       # Conversation settings
       - CONVERSATION__MAX_MESSAGES=${CONVERSATION_MAX_MESSAGES:-50}
       - CONVERSATION__TTL=${CONVERSATION_TTL:-24h}
-      # Bot settings
-      - BOT__LOG_LEVEL=${LOG_LEVEL:-info}
+      # Bot settings - debug for troubleshooting
+      - BOT__LOG_LEVEL=debug
       # Tools configuration
+      - TOOLS__ENABLED=${TOOLS_ENABLED:-true}
       - TOOLS__WEB_SEARCH__API_KEY=${TOOLS_WEB_SEARCH_API_KEY}
       # Dstack TEE socket - provided by Phala CVM
       - DSTACK__SOCKET_PATH=/var/run/dstack.sock

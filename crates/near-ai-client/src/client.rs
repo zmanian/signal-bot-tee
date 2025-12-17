@@ -110,15 +110,26 @@ impl NearAiClient {
             tool_choice: tools.map(|_| "auto".to_string()),
         };
 
-        let response = self
+        let url = format!("{}/chat/completions", self.base_url);
+        debug!("Sending chat_with_tools request to {}", url);
+
+        let response = match self
             .client
-            .post(format!("{}/chat/completions", self.base_url))
+            .post(&url)
             .header("Authorization", format!("Bearer {}", self.api_key.expose_secret()))
             .header("Content-Type", "application/json")
             .json(&request)
             .send()
-            .await?;
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                warn!("HTTP request to {} failed: {}", url, e);
+                return Err(e.into());
+            }
+        };
 
+        debug!("Response status: {}", response.status());
         let chat_response = self.handle_response::<ChatResponse>(response).await?;
 
         // Extract from first choice
@@ -267,8 +278,28 @@ impl NearAiClient {
     }
 
     /// Health check - returns true if API is reachable.
+    /// Actually tests connectivity by fetching models from the API.
     pub async fn health_check(&self) -> bool {
-        self.list_models().await.is_ok()
+        match self
+            .client
+            .get(format!("{}/models", self.base_url))
+            .header("Authorization", format!("Bearer {}", self.api_key.expose_secret()))
+            .send()
+            .await
+        {
+            Ok(response) => {
+                if response.status().is_success() {
+                    true
+                } else {
+                    warn!("NEAR AI health check failed: HTTP {}", response.status());
+                    false
+                }
+            }
+            Err(e) => {
+                warn!("NEAR AI health check failed: {}", e);
+                false
+            }
+        }
     }
 
     /// Handle HTTP response, converting errors appropriately.
