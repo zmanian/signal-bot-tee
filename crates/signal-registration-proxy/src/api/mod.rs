@@ -68,6 +68,10 @@ pub fn create_router_with_rate_limit(state: AppState, rate_limit: RateLimitState
         .route("/v1/profiles/:number", put(handlers::update_profile))
         .route("/v1/accounts/:number/username", post(handlers::set_username))
         .route("/v1/accounts/:number/username", delete(handlers::delete_username))
+        // Bot configuration management
+        .route("/v1/bots", get(handlers::list_bots))
+        .route("/v1/bots/:number", get(handlers::get_bot_config))
+        .route("/v1/bots/:number", put(handlers::update_bot_config))
         // Debug endpoints
         .route("/v1/debug/signal-accounts", get(handlers::debug_signal_accounts))
         .route("/v1/debug/force-unregister/:number", post(handlers::debug_force_unregister))

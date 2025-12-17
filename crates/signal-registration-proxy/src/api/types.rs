@@ -16,6 +16,12 @@ pub struct RegisterRequest {
     /// Optional ownership proof secret (will be hashed and stored)
     /// Required for later unregistration or re-registration
     pub ownership_secret: Option<String>,
+
+    /// AI model to use for this bot
+    pub model: Option<String>,
+
+    /// System prompt for the AI assistant
+    pub system_prompt: Option<String>,
 }
 
 /// Response after initiating registration.
@@ -65,6 +71,9 @@ pub struct AccountInfo {
     pub phone_number: String,
     pub status: RegistrationStatus,
     pub registered_at: String,
+    pub model: Option<String>,
+    pub system_prompt: Option<String>,
+    pub username: Option<String>,
 }
 
 /// Request to unregister a number.
@@ -126,4 +135,52 @@ pub struct UsernameResponse {
 pub struct DeleteUsernameRequest {
     /// Ownership secret (must match what was provided during registration)
     pub ownership_secret: Option<String>,
+}
+
+/// Request to update bot configuration.
+#[derive(Debug, Deserialize)]
+pub struct UpdateBotConfigRequest {
+    /// AI model to use for this bot
+    pub model: Option<String>,
+
+    /// System prompt for the AI assistant
+    pub system_prompt: Option<String>,
+
+    /// Ownership secret (must match what was provided during registration)
+    pub ownership_secret: Option<String>,
+}
+
+/// Response after updating bot config.
+#[derive(Debug, Serialize)]
+pub struct BotConfigResponse {
+    pub phone_number: String,
+    pub model: Option<String>,
+    pub system_prompt: Option<String>,
+    pub message: String,
+}
+
+/// Bot info for public listing.
+#[derive(Debug, Serialize)]
+pub struct BotInfo {
+    /// Signal username (if set)
+    pub username: String,
+    /// Phone number in E.164 format
+    pub phone_number: String,
+    /// Signal.me link
+    pub signal_link: String,
+    /// When registered
+    pub registered_at: String,
+    /// AI model
+    pub model: Option<String>,
+    /// Bot description (derived from system prompt)
+    pub description: Option<String>,
+    /// Full system prompt
+    pub system_prompt: Option<String>,
+}
+
+/// List of bots response.
+#[derive(Debug, Serialize)]
+pub struct BotsResponse {
+    pub bots: Vec<BotInfo>,
+    pub total: usize,
 }

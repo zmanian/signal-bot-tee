@@ -1,9 +1,10 @@
 //! HTTP request handlers.
 
 use super::types::{
-    AccountInfo, AccountsResponse, DeleteUsernameRequest, HealthResponse, ProfileResponse,
-    RegisterRequest, RegisterResponse, SetUsernameRequest, StatusResponse, UnregisterRequest,
-    UpdateProfileRequest, UsernameResponse, VerifyRequest, VerifyResponse,
+    AccountInfo, AccountsResponse, BotConfigResponse, BotInfo, DeleteUsernameRequest,
+    HealthResponse, ProfileResponse, RegisterRequest, RegisterResponse, SetUsernameRequest,
+    StatusResponse, UnregisterRequest, UpdateBotConfigRequest, UpdateProfileRequest,
+    UsernameResponse, VerifyRequest, VerifyResponse,
 };
 use super::AppState;
 use crate::error::ProxyError;
@@ -87,7 +88,12 @@ pub async fn register_number(
     }
 
     // Record the registration attempt
-    let record = PhoneNumberRecord::new_pending(number.clone(), request.ownership_secret.as_deref());
+    let record = PhoneNumberRecord::new_pending(
+        number.clone(),
+        request.ownership_secret.as_deref(),
+        request.model.clone(),
+        request.system_prompt.clone(),
+    );
 
     let mut registry = state.registry.write().await;
     registry.insert(number.clone(), record);
@@ -180,6 +186,9 @@ pub async fn list_accounts(State(state): State<AppState>) -> Json<AccountsRespon
             phone_number: r.phone_number.clone(),
             status: r.status.clone(),
             registered_at: r.registered_at.to_rfc3339(),
+            model: r.model.clone(),
+            system_prompt: r.system_prompt.clone(),
+            username: r.username.clone(),
         })
         .collect();
 
@@ -305,24 +314,34 @@ pub async fn set_username(
     info!(phone_number = %number, username = %request.username, "Set username request received");
 
     // Check registration exists and is verified
-    let registry = state.registry.read().await;
-    let record = registry.get(&number).ok_or(ProxyError::NotFound(number.clone()))?;
+    {
+        let registry = state.registry.read().await;
+        let record = registry.get(&number).ok_or(ProxyError::NotFound(number.clone()))?;
 
-    if record.status != RegistrationStatus::Verified {
-        return Err(ProxyError::NotFound(number));
-    }
+        if record.status != RegistrationStatus::Verified {
+            return Err(ProxyError::NotFound(number));
+        }
 
-    // Verify ownership
-    if !record.verify_ownership(request.ownership_secret.as_deref()) {
-        return Err(ProxyError::OwnershipProofMismatch);
+        // Verify ownership
+        if !record.verify_ownership(request.ownership_secret.as_deref()) {
+            return Err(ProxyError::OwnershipProofMismatch);
+        }
     }
-    drop(registry);
 
     // Set username via Signal CLI
     let info = state
         .signal_client
         .set_username(&number, &request.username)
         .await?;
+
+    // Store username in our registry
+    {
+        let mut registry = state.registry.write().await;
+        if let Some(record) = registry.get_mut(&number) {
+            record.set_username(info.username.clone());
+        }
+        state.store.save(&registry).await?;
+    }
 
     info!(phone_number = %number, username = ?info.username, "Username set successfully");
 
@@ -368,4 +387,111 @@ pub async fn delete_username(
         username_link: None,
         message: "Username deleted successfully.".to_string(),
     }))
+}
+
+/// Update bot configuration (model, system prompt).
+pub async fn update_bot_config(
+    State(state): State<AppState>,
+    Path(number): Path<String>,
+    Json(request): Json<UpdateBotConfigRequest>,
+) -> Result<Json<BotConfigResponse>, ProxyError> {
+    let number = normalize_phone_number(&number).map_err(ProxyError::InvalidPhoneNumber)?;
+    info!(phone_number = %number, "Bot config update request received");
+
+    // Check registration exists and is verified
+    {
+        let registry = state.registry.read().await;
+        let record = registry.get(&number).ok_or(ProxyError::NotFound(number.clone()))?;
+
+        if record.status != RegistrationStatus::Verified {
+            return Err(ProxyError::NotFound(number));
+        }
+
+        // Verify ownership
+        if !record.verify_ownership(request.ownership_secret.as_deref()) {
+            return Err(ProxyError::OwnershipProofMismatch);
+        }
+    }
+
+    // Update config in registry
+    let (model, system_prompt) = {
+        let mut registry = state.registry.write().await;
+        let record = registry.get_mut(&number).ok_or(ProxyError::NotFound(number.clone()))?;
+        record.update_config(request.model.clone(), request.system_prompt.clone());
+        let result = (record.model.clone(), record.system_prompt.clone());
+        state.store.save(&registry).await?;
+        result
+    };
+
+    info!(phone_number = %number, "Bot config updated successfully");
+
+    Ok(Json(BotConfigResponse {
+        phone_number: number,
+        model,
+        system_prompt,
+        message: "Bot configuration updated successfully.".to_string(),
+    }))
+}
+
+/// Get bot configuration.
+pub async fn get_bot_config(
+    State(state): State<AppState>,
+    Path(number): Path<String>,
+) -> Result<Json<BotConfigResponse>, ProxyError> {
+    let number = normalize_phone_number(&number).map_err(ProxyError::InvalidPhoneNumber)?;
+
+    let registry = state.registry.read().await;
+    let record = registry.get(&number).ok_or(ProxyError::NotFound(number.clone()))?;
+
+    if record.status != RegistrationStatus::Verified {
+        return Err(ProxyError::NotFound(number));
+    }
+
+    Ok(Json(BotConfigResponse {
+        phone_number: record.phone_number.clone(),
+        model: record.model.clone(),
+        system_prompt: record.system_prompt.clone(),
+        message: "Bot configuration retrieved.".to_string(),
+    }))
+}
+
+/// List all verified bots (public endpoint).
+pub async fn list_bots(State(state): State<AppState>) -> Json<Vec<BotInfo>> {
+    let registry = state.registry.read().await;
+    let bots: Vec<BotInfo> = registry
+        .list_all()
+        .into_iter()
+        .filter(|r| r.status == RegistrationStatus::Verified)
+        .map(|r| {
+            // Generate Signal.me link
+            let phone_digits = r.phone_number.chars().filter(|c| c.is_ascii_digit()).collect::<String>();
+            let signal_link = format!("https://signal.me/#p/+{}", phone_digits);
+
+            // Use username as display name, or phone number as fallback
+            let username = r.username.clone().unwrap_or_else(|| r.phone_number.clone());
+
+            // Extract description from first line of system prompt
+            let description = r.system_prompt.as_ref().and_then(|p| {
+                p.lines().next().map(|line| {
+                    if line.len() > 100 {
+                        format!("{}...", &line[..100])
+                    } else {
+                        line.to_string()
+                    }
+                })
+            });
+
+            BotInfo {
+                username,
+                phone_number: r.phone_number.clone(),
+                signal_link,
+                registered_at: r.registered_at.to_rfc3339(),
+                model: r.model.clone(),
+                description,
+                system_prompt: r.system_prompt.clone(),
+            }
+        })
+        .collect();
+
+    Json(bots)
 }

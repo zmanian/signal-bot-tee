@@ -35,17 +35,52 @@ pub struct PhoneNumberRecord {
 
     /// SHA-256 hash of ownership proof secret (if provided)
     pub ownership_proof_hash: Option<String>,
+
+    /// AI model to use for this bot (e.g., "deepseek-ai/DeepSeek-V3.1")
+    #[serde(default)]
+    pub model: Option<String>,
+
+    /// System prompt for the AI assistant
+    #[serde(default)]
+    pub system_prompt: Option<String>,
+
+    /// Signal username (without discriminator)
+    #[serde(default)]
+    pub username: Option<String>,
 }
 
 impl PhoneNumberRecord {
     /// Create a new pending registration record.
-    pub fn new_pending(phone_number: String, ownership_secret: Option<&str>) -> Self {
+    pub fn new_pending(
+        phone_number: String,
+        ownership_secret: Option<&str>,
+        model: Option<String>,
+        system_prompt: Option<String>,
+    ) -> Self {
         Self {
             phone_number,
             registered_at: Utc::now(),
             status: RegistrationStatus::Pending,
             ownership_proof_hash: ownership_secret.map(hash_secret),
+            model,
+            system_prompt,
+            username: None,
         }
+    }
+
+    /// Update bot configuration.
+    pub fn update_config(&mut self, model: Option<String>, system_prompt: Option<String>) {
+        if model.is_some() {
+            self.model = model;
+        }
+        if system_prompt.is_some() {
+            self.system_prompt = system_prompt;
+        }
+    }
+
+    /// Set the username.
+    pub fn set_username(&mut self, username: Option<String>) {
+        self.username = username;
     }
 
     /// Check if the provided secret matches the stored ownership proof.
@@ -138,15 +173,36 @@ mod tests {
 
     #[test]
     fn test_verify_ownership() {
-        let record = PhoneNumberRecord::new_pending("+14155551234".into(), Some("secret123"));
+        let record = PhoneNumberRecord::new_pending("+14155551234".into(), Some("secret123"), None, None);
 
         assert!(record.verify_ownership(Some("secret123")));
         assert!(!record.verify_ownership(Some("wrong")));
         assert!(!record.verify_ownership(None));
 
-        let no_proof_record = PhoneNumberRecord::new_pending("+14155551234".into(), None);
+        let no_proof_record = PhoneNumberRecord::new_pending("+14155551234".into(), None, None, None);
         assert!(no_proof_record.verify_ownership(None));
         assert!(no_proof_record.verify_ownership(Some("anything")));
+    }
+
+    #[test]
+    fn test_update_config() {
+        let mut record = PhoneNumberRecord::new_pending(
+            "+14155551234".into(),
+            None,
+            Some("model1".into()),
+            Some("prompt1".into()),
+        );
+
+        assert_eq!(record.model, Some("model1".into()));
+        assert_eq!(record.system_prompt, Some("prompt1".into()));
+
+        record.update_config(Some("model2".into()), None);
+        assert_eq!(record.model, Some("model2".into()));
+        assert_eq!(record.system_prompt, Some("prompt1".into()));
+
+        record.update_config(None, Some("prompt2".into()));
+        assert_eq!(record.model, Some("model2".into()));
+        assert_eq!(record.system_prompt, Some("prompt2".into()));
     }
 
     #[test]
