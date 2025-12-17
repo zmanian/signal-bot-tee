@@ -22,15 +22,13 @@
   --success-text: #34d399;
 }
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
 html {
   scroll-behavior: smooth;
   color-scheme: dark;
+}
+
+#root {
+  width: 100%;
 }
 
 body {

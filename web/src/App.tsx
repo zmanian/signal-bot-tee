@@ -10,45 +10,46 @@ function App() {
   const { isLoading: attestationLoading } = useAttestation()
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen w-full flex flex-col">
       {/* Floating particles */}
       <div className="particle" />
       <div className="particle" />
       <div className="particle" />
 
       {/* Hero Section */}
-      <section className="py-16 md:py-24">
-        <div className="w-full max-w-4xl mx-auto px-8 md:px-12 text-center">
+      <section className="w-full py-20 md:py-28">
+        <div className="max-w-6xl mx-auto px-6 md:px-12 lg:px-20">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
+            className="flex flex-col items-center text-center"
           >
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 mb-6 rounded-full glass-card text-xs font-medium">
-              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+            <div className="inline-flex items-center gap-2 px-4 py-2 mb-8 rounded-full glass-card text-sm font-medium">
+              <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
               <span className="text-[var(--text-secondary)]">Secured by Intel TDX</span>
             </div>
 
-            <h1 className="text-4xl md:text-6xl font-bold mb-4 leading-tight">
+            <h1 className="text-5xl md:text-7xl font-bold mb-6 leading-tight">
               <span className="gradient-text">Private AI</span>
               <span className="text-[var(--text-primary)]"> Conversations</span>
             </h1>
 
-            <p className="text-lg md:text-xl text-[var(--text-secondary)] mb-8 max-w-xl mx-auto">
+            <p className="text-xl md:text-2xl text-[var(--text-secondary)] mb-10 max-w-2xl">
               Chat with AI through Signal, protected by hardware security.
             </p>
 
-            <div className="flex flex-wrap justify-center gap-6 text-sm text-[var(--text-muted)]">
+            <div className="flex flex-wrap justify-center gap-8 text-sm text-[var(--text-muted)]">
               <div className="flex items-center gap-2">
-                <Shield className="w-4 h-4 text-[var(--accent-start)]" />
+                <Shield className="w-5 h-5 text-[var(--accent-start)]" />
                 <span>End-to-End Encrypted</span>
               </div>
               <div className="flex items-center gap-2">
-                <Cpu className="w-4 h-4 text-[var(--accent-mid)]" />
+                <Cpu className="w-5 h-5 text-[var(--accent-mid)]" />
                 <span>TEE Protected</span>
               </div>
               <div className="flex items-center gap-2">
-                <Lock className="w-4 h-4 text-[var(--accent-end)]" />
+                <Lock className="w-5 h-5 text-[var(--accent-end)]" />
                 <span>Verifiable</span>
               </div>
             </div>
@@ -57,35 +58,35 @@ function App() {
       </section>
 
       {/* Bot Cards Section */}
-      <section className="pb-16 md:pb-20">
-        <div className="w-full max-w-xl mx-auto px-8 md:px-12">
+      <section className="w-full pb-20 md:pb-28">
+        <div className="max-w-2xl mx-auto px-6 md:px-12 lg:px-20">
           {botsError ? (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="glass-card p-8 text-center"
+              className="glass-card p-10 flex flex-col items-center text-center"
             >
-              <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-amber-500/10 flex items-center justify-center">
-                <AlertCircle className="w-6 h-6 text-amber-400" />
+              <div className="w-16 h-16 mb-4 rounded-full bg-amber-500/10 flex items-center justify-center">
+                <AlertCircle className="w-8 h-8 text-amber-400" />
               </div>
-              <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-2">
+              <h3 className="text-xl font-semibold text-[var(--text-primary)] mb-3">
                 Could not load bots
               </h3>
-              <p className="text-[var(--text-muted)] text-sm mb-4">
+              <p className="text-[var(--text-muted)] mb-6">
                 The bot directory is temporarily unavailable.
               </p>
               <button
                 onClick={() => refetchBots()}
-                className="glass-button text-sm flex items-center gap-2 mx-auto"
+                className="glass-button flex items-center gap-2"
               >
-                <RefreshCw className="w-3 h-3" />
+                <RefreshCw className="w-4 h-4" />
                 Retry
               </button>
             </motion.div>
           ) : botsLoading ? (
             <BotCardSkeleton />
           ) : bots && bots.length > 0 ? (
-            <div className="space-y-6">
+            <div className="space-y-8">
               {bots.map((bot, index) => (
                 <BotCard key={bot.username} bot={bot} index={index} featured={bots.length === 1} />
               ))}
@@ -94,28 +95,28 @@ function App() {
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="glass-card p-6 text-center"
+              className="glass-card p-8 flex flex-col items-center text-center"
             >
-              <p className="text-[var(--text-muted)] text-sm">No bots registered yet.</p>
+              <p className="text-[var(--text-muted)]">No bots registered yet.</p>
             </motion.div>
           )}
         </div>
       </section>
 
       {/* Verification Section */}
-      <section id="verify" className="py-16 md:py-20 border-t border-white/5">
-        <div className="w-full max-w-2xl mx-auto px-8 md:px-12">
+      <section id="verify" className="w-full py-20 md:py-28 border-t border-white/5">
+        <div className="max-w-3xl mx-auto px-6 md:px-12 lg:px-20">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.5 }}
-            className="text-center mb-8"
+            className="flex flex-col items-center text-center mb-12"
           >
-            <h2 className="text-2xl md:text-3xl font-bold mb-2">
+            <h2 className="text-3xl md:text-4xl font-bold mb-4">
               <span className="gradient-text">Verify Security</span>
             </h2>
-            <p className="text-[var(--text-secondary)] text-sm">
+            <p className="text-[var(--text-secondary)] text-lg">
               Don't trust us — verify the cryptographic proof yourself.
             </p>
           </motion.div>
@@ -129,9 +130,9 @@ function App() {
       </section>
 
       {/* Footer */}
-      <footer className="py-8 border-t border-white/5">
-        <div className="w-full max-w-4xl mx-auto px-8 md:px-12">
-          <p className="text-[var(--text-muted)] text-xs text-center">
+      <footer className="w-full py-10 border-t border-white/5 mt-auto">
+        <div className="max-w-6xl mx-auto px-6 md:px-12 lg:px-20">
+          <p className="text-[var(--text-muted)] text-sm text-center">
             Powered by{' '}
             <a href="https://near.ai" target="_blank" rel="noopener noreferrer" className="hover:text-[var(--text-secondary)] transition-colors">
               NEAR AI

@@ -26,16 +26,16 @@ export function BotCard({ bot, index }: BotCardProps) {
       initial={{ opacity: 0, y: 30 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, delay: index * 0.1 }}
-      className="glass-card p-8 md:p-10 text-center"
+      className="glass-card p-8 md:p-12"
     >
       {/* Avatar and Name - Centered */}
-      <div className="flex flex-col items-center mb-6">
-        <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[var(--accent-start)] to-[var(--accent-end)] flex items-center justify-center text-white text-3xl font-bold shadow-lg mb-4">
+      <div className="flex flex-col items-center text-center mb-8">
+        <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-[var(--accent-start)] to-[var(--accent-end)] flex items-center justify-center text-white text-4xl font-bold shadow-lg mb-5">
           {bot.username.charAt(0).toUpperCase()}
         </div>
-        <h3 className="text-2xl font-semibold text-[var(--text-primary)]">@{bot.username}</h3>
-        <p className="text-base text-[var(--text-muted)]">Signal Bot</p>
-        <div className="flex items-center gap-2 text-emerald-400 text-sm font-medium bg-emerald-500/10 px-4 py-2 rounded-full mt-3">
+        <h3 className="text-2xl md:text-3xl font-semibold text-[var(--text-primary)] mb-1">@{bot.username}</h3>
+        <p className="text-base text-[var(--text-muted)] mb-3">Signal Bot</p>
+        <div className="inline-flex items-center gap-2 text-emerald-400 text-sm font-medium bg-emerald-500/10 px-4 py-2 rounded-full">
           <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
           Online
         </div>
@@ -43,16 +43,16 @@ export function BotCard({ bot, index }: BotCardProps) {
 
       {/* Description and Model - Centered */}
       {(bot.description || bot.model) && (
-        <div className="mb-8 space-y-3">
+        <div className="flex flex-col items-center text-center mb-8 space-y-4">
           {bot.description && (
-            <p className="text-base text-[var(--text-secondary)] leading-relaxed max-w-md mx-auto">
+            <p className="text-base md:text-lg text-[var(--text-secondary)] leading-relaxed max-w-lg">
               {bot.description}
             </p>
           )}
           {bot.model && (
-            <div className="flex items-center justify-center gap-2 text-sm text-[var(--text-muted)]">
+            <div className="inline-flex items-center gap-2 text-sm text-[var(--text-muted)]">
               <Cpu className="w-4 h-4" />
-              <span className="font-mono bg-white/5 px-2.5 py-1 rounded-md">
+              <span className="font-mono bg-white/5 px-3 py-1.5 rounded-lg">
                 {bot.model}
               </span>
             </div>
@@ -61,19 +61,19 @@ export function BotCard({ bot, index }: BotCardProps) {
       )}
 
       {/* Actions - Centered */}
-      <div className="flex flex-col sm:flex-row gap-4 justify-center max-w-md mx-auto">
+      <div className="flex flex-col sm:flex-row gap-4 justify-center max-w-lg mx-auto">
         <a
           href={bot.signal_link}
           target="_blank"
           rel="noopener noreferrer"
-          className="glass-button glass-button-primary flex items-center justify-center gap-2 flex-1 py-4 text-base"
+          className="glass-button glass-button-primary flex items-center justify-center gap-3 flex-1 py-4 text-base"
         >
           <MessageCircle className="w-5 h-5" />
           Message on Signal
         </a>
         <button
           onClick={() => setExpanded(!expanded)}
-          className="glass-button flex items-center justify-center gap-2 flex-1 py-4 text-base"
+          className="glass-button flex items-center justify-center gap-3 flex-1 py-4 text-base"
         >
           <Shield className="w-5 h-5" />
           Verify Security
@@ -96,13 +96,13 @@ export function BotCard({ bot, index }: BotCardProps) {
             transition={{ duration: 0.3 }}
             className="overflow-hidden"
           >
-            <div className="pt-6 mt-6 border-t border-white/5 text-left max-w-md mx-auto">
-              <div className="flex items-center justify-between mb-3">
+            <div className="pt-8 mt-8 border-t border-white/10 max-w-lg mx-auto">
+              <div className="flex items-center justify-between mb-4">
                 <h4 className="font-medium text-[var(--text-primary)]">Signal Identity Key</h4>
                 {bot.identity_key && (
                   <button
                     onClick={copyIdentityKey}
-                    className="text-sm text-[var(--accent-start)] hover:text-[var(--accent-end)] flex items-center gap-1 transition-colors"
+                    className="text-sm text-[var(--accent-start)] hover:text-[var(--accent-end)] flex items-center gap-2 transition-colors"
                   >
                     {copied ? (
                       <>
@@ -129,7 +129,7 @@ export function BotCard({ bot, index }: BotCardProps) {
                 </p>
               )}
 
-              <p className="text-xs text-[var(--text-muted)] mt-3 leading-relaxed">
+              <p className="text-xs text-[var(--text-muted)] mt-4 leading-relaxed">
                 Compare this with Signal app: Open chat → Tap contact name → View Safety Number
               </p>
             </div>
@@ -142,13 +142,14 @@ export function BotCard({ bot, index }: BotCardProps) {
 
 export function BotCardSkeleton() {
   return (
-    <div className="glass-card p-8 text-center">
-      <div className="flex flex-col items-center mb-6">
-        <div className="w-20 h-20 rounded-2xl skeleton mb-4" />
-        <div className="h-7 w-40 skeleton mb-2" />
-        <div className="h-5 w-24 skeleton" />
+    <div className="glass-card p-8 md:p-12">
+      <div className="flex flex-col items-center mb-8">
+        <div className="w-24 h-24 rounded-2xl skeleton mb-5" />
+        <div className="h-8 w-48 skeleton mb-2" />
+        <div className="h-5 w-24 skeleton mb-3" />
+        <div className="h-8 w-20 skeleton rounded-full" />
       </div>
-      <div className="flex gap-4 justify-center max-w-md mx-auto">
+      <div className="flex gap-4 justify-center max-w-lg mx-auto">
         <div className="h-14 flex-1 skeleton rounded-xl" />
         <div className="h-14 flex-1 skeleton rounded-xl" />
       </div>
