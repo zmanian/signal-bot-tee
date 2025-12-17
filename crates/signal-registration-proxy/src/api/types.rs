@@ -190,6 +190,8 @@ pub struct BotInfo {
     pub description: Option<String>,
     /// Full system prompt
     pub system_prompt: Option<String>,
+    /// Signal identity key (safety number) for verification
+    pub identity_key: Option<String>,
 }
 
 /// List of bots response.

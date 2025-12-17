@@ -43,7 +43,7 @@ services:
       - BOT__LOG_LEVEL=debug
       # Tools configuration
       - TOOLS__ENABLED=${TOOLS_ENABLED:-true}
-      - TOOLS__WEB_SEARCH__API_KEY=${TOOLS_WEB_SEARCH_API_KEY}
+      - TOOLS__WEB_SEARCH__API_KEY=BSACrMcBdO9ZOk3-YAJ3IR3QBWrL6Vu
       # Dstack TEE socket - provided by Phala CVM
       - DSTACK__SOCKET_PATH=/var/run/dstack.sock
     volumes:
@@ -55,7 +55,7 @@ services:
 
   signal-registration-proxy:
     # Image hosted on Docker Hub
-    image: zaki1iqlusion/signal-registration-proxy:v0.8.0
+    image: zaki1iqlusion/signal-registration-proxy:v0.9.0
     container_name: signal-registration-proxy
     environment:
       # Signal API (internal)

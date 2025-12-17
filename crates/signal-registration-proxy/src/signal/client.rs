@@ -294,6 +294,42 @@ impl SignalRegistrationClient {
         debug!(phone_number = %phone_number, "Username deleted successfully");
         Ok(())
     }
+
+    /// Get identity/fingerprint information for a phone number.
+    /// Returns the safety number that users can compare with their Signal app.
+    #[instrument(skip(self))]
+    pub async fn get_identity(&self, phone_number: &str) -> Result<Option<IdentityInfo>, ProxyError> {
+        let encoded_number = encode(phone_number);
+        let url = format!("{}/v1/identities/{}", self.base_url, encoded_number);
+
+        debug!(url = %url, "Fetching identity information");
+
+        let response = self.client.get(&url).send().await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            // 404 is expected if no identity exists yet
+            if status.as_u16() == 404 {
+                return Ok(None);
+            }
+            let body = response.text().await.unwrap_or_default();
+            warn!(status = %status, body = %body, "Signal get identity failed");
+            return Err(ProxyError::SignalApi(format!(
+                "Get identity failed: {} - {}",
+                status, body
+            )));
+        }
+
+        // Signal CLI returns an array of identities, we want our own identity (first one)
+        let identities: Vec<IdentityInfo> = response.json().await.map_err(|e| {
+            ProxyError::SignalApi(format!("Failed to parse identity response: {}", e))
+        })?;
+
+        // Find the identity for this phone number (the account's own identity)
+        let own_identity = identities.into_iter().find(|i| i.number == phone_number);
+
+        Ok(own_identity)
+    }
 }
 
 /// Account information from Signal CLI API.
@@ -335,6 +371,22 @@ struct UsernameRequestBody {
 pub struct UsernameInfo {
     pub username: Option<String>,
     pub username_link: Option<String>,
+}
+
+/// Identity/fingerprint information from Signal CLI API.
+#[derive(Debug, Clone, Deserialize)]
+pub struct IdentityInfo {
+    /// Phone number this identity belongs to
+    pub number: String,
+    /// Trust status (e.g., "TRUSTED_VERIFIED", "TRUSTED_UNVERIFIED")
+    pub status: String,
+    /// Fingerprint in hex format (e.g., "05 d1 6a 0a ...")
+    pub fingerprint: String,
+    /// Safety number for verification (e.g., "96616 40685 ...")
+    pub safety_number: String,
+    /// UUID of the account
+    #[serde(default)]
+    pub uuid: Option<String>,
 }
 
 #[cfg(test)]

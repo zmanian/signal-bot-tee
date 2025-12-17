@@ -509,41 +509,58 @@ pub async fn get_bot_config(
 
 /// List all verified bots (public endpoint).
 pub async fn list_bots(State(state): State<AppState>) -> Json<Vec<BotInfo>> {
-    let registry = state.registry.read().await;
-    let bots: Vec<BotInfo> = registry
-        .list_all()
-        .into_iter()
-        .filter(|r| r.status == RegistrationStatus::Verified)
-        .map(|r| {
-            // Generate Signal.me link
-            let phone_digits = r.phone_number.chars().filter(|c| c.is_ascii_digit()).collect::<String>();
-            let signal_link = format!("https://signal.me/#p/+{}", phone_digits);
+    // Collect verified records and release the lock before async calls
+    let verified_records: Vec<_> = {
+        let registry = state.registry.read().await;
+        registry
+            .list_all()
+            .into_iter()
+            .filter(|r| r.status == RegistrationStatus::Verified)
+            .cloned()
+            .collect()
+    };
 
-            // Use username as display name, or phone number as fallback
-            let username = r.username.clone().unwrap_or_else(|| r.phone_number.clone());
+    let mut bots = Vec::new();
+    for r in verified_records {
+        // Generate Signal.me link
+        let phone_digits = r.phone_number.chars().filter(|c| c.is_ascii_digit()).collect::<String>();
+        let signal_link = format!("https://signal.me/#p/+{}", phone_digits);
 
-            // Extract description from first line of system prompt
-            let description = r.system_prompt.as_ref().and_then(|p| {
-                p.lines().next().map(|line| {
-                    if line.len() > 100 {
-                        format!("{}...", &line[..100])
-                    } else {
-                        line.to_string()
-                    }
-                })
-            });
+        // Use username as display name, or phone number as fallback
+        let username = r.username.clone().unwrap_or_else(|| r.phone_number.clone());
 
-            BotInfo {
-                username,
-                phone_number: r.phone_number.clone(),
-                signal_link,
-                registered_at: r.registered_at.to_rfc3339(),
-                model: r.model.clone(),
-                description,
-                system_prompt: r.system_prompt.clone(),
+        // Extract description from first line of system prompt
+        let description = r.system_prompt.as_ref().and_then(|p| {
+            p.lines().next().map(|line| {
+                if line.len() > 100 {
+                    format!("{}...", &line[..100])
+                } else {
+                    line.to_string()
+                }
+            })
+        });
+
+        // Fetch identity key (safety number) from Signal CLI
+        let identity_key = match state.signal_client.get_identity(&r.phone_number).await {
+            Ok(Some(identity)) => Some(identity.safety_number),
+            Ok(None) => None,
+            Err(e) => {
+                warn!(phone_number = %r.phone_number, error = %e, "Failed to fetch identity key");
+                None
             }
-        })
-        .collect();
+        };
+
+        bots.push(BotInfo {
+            username,
+            phone_number: r.phone_number.clone(),
+            signal_link,
+            registered_at: r.registered_at.to_rfc3339(),
+            model: r.model.clone(),
+            description,
+            system_prompt: r.system_prompt.clone(),
+            identity_key,
+        });
+    }
 
     Json(bots)
 }

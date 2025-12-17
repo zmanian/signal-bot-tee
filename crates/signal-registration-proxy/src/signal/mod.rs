@@ -2,4 +2,4 @@
 
 mod client;
 
-pub use client::SignalRegistrationClient;
+pub use client::{IdentityInfo, SignalRegistrationClient};
