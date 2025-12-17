@@ -261,19 +261,31 @@ h1, h2, h3 {
 /* Container & Layout */
 .container {
   width: 100%;
-  max-width: 1400px;
+  max-width: 1200px;
   margin: 0 auto;
-  padding: 0 32px;
+  padding: 0 48px;
   position: relative;
   z-index: 1;
 }
 
+@media (min-width: 1024px) {
+  .container {
+    padding: 0 64px;
+  }
+}
+
+@media (max-width: 640px) {
+  .container {
+    padding: 0 24px;
+  }
+}
+
 .section {
-  padding: 120px 0;
+  padding: 64px 0;
 }
 
 @media (max-width: 768px) {
   .section {
-    padding: 80px 0;
+    padding: 48px 0;
   }
 }

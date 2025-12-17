@@ -3,7 +3,7 @@ import { Shield, Lock, Cpu } from 'lucide-react'
 
 export function Hero() {
   return (
-    <section className="section min-h-[90vh] flex items-center justify-center">
+    <section className="section pt-24 pb-16 flex items-center justify-center">
       <div className="container text-center">
         {/* Animated badge */}
         <motion.div
@@ -33,7 +33,7 @@ export function Hero() {
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, delay: 0.2 }}
-          className="text-xl md:text-2xl text-[var(--text-secondary)] mb-12 max-w-2xl mx-auto leading-relaxed"
+          className="text-xl md:text-2xl text-[var(--text-secondary)] mb-10 max-w-2xl mx-auto leading-relaxed"
         >
           Chat with AI through Signal, protected by hardware security.
           <br className="hidden md:block" />
@@ -45,7 +45,7 @@ export function Hero() {
           initial={{ opacity: 0, y: 40 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.3 }}
-          className="flex flex-col md:flex-row gap-6 justify-center items-center mb-16"
+          className="flex flex-col md:flex-row gap-6 justify-center items-center"
         >
           <TrustCard
             icon={<Shield className="w-5 h-5" />}
@@ -65,22 +65,6 @@ export function Hero() {
             description="Cryptographic proof you can check"
             delay={0.6}
           />
-        </motion.div>
-
-        {/* Scroll indicator */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 1, delay: 1 }}
-          className="mt-16"
-        >
-          <motion.div
-            animate={{ y: [0, 8, 0] }}
-            transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-            className="w-6 h-10 mx-auto rounded-full border-2 border-[var(--text-muted)] flex items-start justify-center p-2"
-          >
-            <div className="w-1.5 h-3 bg-[var(--text-muted)] rounded-full" />
-          </motion.div>
         </motion.div>
       </div>
     </section>

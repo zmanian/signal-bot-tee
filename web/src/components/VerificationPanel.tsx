@@ -51,12 +51,12 @@ export function VerificationPanel() {
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="glass-card p-8 md:p-10"
+      className="glass-card p-8 md:p-10 text-center"
     >
       <h2 className="text-2xl font-bold text-[var(--text-primary)] mb-8">Security Verification</h2>
 
       {/* Simple trust indicators */}
-      <div className="space-y-4 mb-10">
+      <div className="space-y-4 mb-10 max-w-lg mx-auto">
         <TrustIndicator
           loading={isLoading}
           verified={displayAttestation?.in_tee}
@@ -100,7 +100,7 @@ export function VerificationPanel() {
             transition={{ duration: 0.3 }}
             className="overflow-hidden"
           >
-            <div className="space-y-8 pt-6 border-t border-white/5">
+            <div className="space-y-8 pt-6 border-t border-white/5 text-left max-w-lg mx-auto">
               {/* Interactive challenge verification */}
               <div>
                 <h4 className="font-medium text-[var(--text-primary)] mb-3">Liveness Verification</h4>
@@ -220,11 +220,11 @@ function TrustIndicator({
 }) {
   return (
     <motion.div
-      initial={{ opacity: 0, x: -20 }}
-      animate={{ opacity: 1, x: 0 }}
-      className="trust-indicator p-4 md:p-5"
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="trust-indicator p-4 md:p-5 flex items-center justify-center gap-4"
     >
-      <div className="check-icon">
+      <div className="check-icon flex-shrink-0">
         {loading ? (
           <RefreshCw className="w-4 h-4 animate-spin" />
         ) : verified ? (
@@ -233,7 +233,7 @@ function TrustIndicator({
           <AlertCircle className="w-4 h-4" />
         )}
       </div>
-      <div>
+      <div className="text-left">
         <p className="font-medium text-[var(--text-primary)]">{label}</p>
         <p className="text-sm text-[var(--text-muted)]">{description}</p>
       </div>
