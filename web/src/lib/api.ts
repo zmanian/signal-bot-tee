@@ -8,6 +8,7 @@ export interface Bot {
   registered_at: string
   model?: string
   description?: string
+  system_prompt?: string
 }
 
 export interface Attestation {
@@ -19,6 +20,54 @@ export interface Attestation {
   report_data?: string
 }
 
+export interface RegisterRequest {
+  captcha?: string
+  use_voice?: boolean
+  ownership_secret?: string
+  model?: string
+  system_prompt?: string
+  username?: string
+}
+
+export interface RegisterResponse {
+  phone_number: string
+  status: string
+  message: string
+}
+
+export interface VerifyRequest {
+  pin?: string
+  ownership_secret?: string
+}
+
+export interface VerifyResponse {
+  phone_number: string
+  status: string
+  message: string
+}
+
+export interface AccountInfo {
+  phone_number: string
+  status: 'pending' | 'verified' | 'failed'
+  registered_at: string
+  model?: string
+  system_prompt?: string
+  username?: string
+}
+
+export interface AccountsResponse {
+  accounts: AccountInfo[]
+  total: number
+}
+
+// Available AI models
+export const AVAILABLE_MODELS = [
+  { id: 'deepseek-ai/DeepSeek-V3.1', name: 'DeepSeek V3.1', description: 'Fast and capable' },
+  { id: 'openai/gpt-oss-120b', name: 'GPT OSS 120B', description: 'Large open source model' },
+  { id: 'Qwen/Qwen3-30B-A3B-Instruct-2507', name: 'Qwen3 30B', description: 'Multilingual' },
+  { id: 'zai-org/GLM-4.6', name: 'GLM 4.6', description: 'Chinese-optimized' },
+] as const
+
 export async function fetchBots(): Promise<Bot[]> {
   const response = await fetch(`${API_URL}/v1/bots`)
   if (!response.ok) {
@@ -26,6 +75,65 @@ export async function fetchBots(): Promise<Bot[]> {
   }
   // Backend returns array directly
   return response.json()
+}
+
+export async function fetchAccounts(): Promise<AccountsResponse> {
+  const response = await fetch(`${API_URL}/v1/accounts`)
+  if (!response.ok) {
+    throw new Error(`Failed to fetch accounts: ${response.statusText}`)
+  }
+  return response.json()
+}
+
+export async function registerNumber(phoneNumber: string, request: RegisterRequest): Promise<RegisterResponse> {
+  const response = await fetch(`${API_URL}/v1/register/${encodeURIComponent(phoneNumber)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: response.statusText }))
+    throw new Error(error.message || error.error || `Registration failed: ${response.statusText}`)
+  }
+  return response.json()
+}
+
+export async function verifyRegistration(phoneNumber: string, code: string, request: VerifyRequest): Promise<VerifyResponse> {
+  const response = await fetch(`${API_URL}/v1/register/${encodeURIComponent(phoneNumber)}/verify/${encodeURIComponent(code)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: response.statusText }))
+    throw new Error(error.message || error.error || `Verification failed: ${response.statusText}`)
+  }
+  return response.json()
+}
+
+export async function setUsername(phoneNumber: string, username: string, ownershipSecret?: string): Promise<{ username?: string; username_link?: string }> {
+  const response = await fetch(`${API_URL}/v1/accounts/${encodeURIComponent(phoneNumber)}/username`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, ownership_secret: ownershipSecret }),
+  })
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: response.statusText }))
+    throw new Error(error.message || error.error || `Failed to set username: ${response.statusText}`)
+  }
+  return response.json()
+}
+
+export async function updateProfile(phoneNumber: string, name?: string, about?: string, ownershipSecret?: string): Promise<void> {
+  const response = await fetch(`${API_URL}/v1/profiles/${encodeURIComponent(phoneNumber)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, about, ownership_secret: ownershipSecret }),
+  })
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: response.statusText }))
+    throw new Error(error.message || error.error || `Failed to update profile: ${response.statusText}`)
+  }
 }
 
 export async function fetchAttestation(): Promise<Attestation> {
