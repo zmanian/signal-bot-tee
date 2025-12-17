@@ -89,7 +89,7 @@ mod tests {
     #[test]
     fn test_registry_insert_and_get() {
         let mut registry = Registry::new();
-        let record = PhoneNumberRecord::new_pending("+14155551234".into(), None);
+        let record = PhoneNumberRecord::new_pending("+14155551234".into(), None, None, None);
 
         registry.insert("+14155551234".into(), record.clone());
 
@@ -101,7 +101,7 @@ mod tests {
     #[test]
     fn test_registry_is_registered() {
         let mut registry = Registry::new();
-        let mut record = PhoneNumberRecord::new_pending("+14155551234".into(), None);
+        let mut record = PhoneNumberRecord::new_pending("+14155551234".into(), None, None, None);
 
         registry.insert("+14155551234".into(), record.clone());
         assert!(!registry.is_registered("+14155551234"));
@@ -114,7 +114,7 @@ mod tests {
     #[test]
     fn test_registry_is_pending() {
         let mut registry = Registry::new();
-        let record = PhoneNumberRecord::new_pending("+14155551234".into(), None);
+        let record = PhoneNumberRecord::new_pending("+14155551234".into(), None, None, None);
 
         registry.insert("+14155551234".into(), record);
         assert!(registry.is_pending("+14155551234"));
@@ -124,7 +124,7 @@ mod tests {
     #[test]
     fn test_registry_remove() {
         let mut registry = Registry::new();
-        let record = PhoneNumberRecord::new_pending("+14155551234".into(), None);
+        let record = PhoneNumberRecord::new_pending("+14155551234".into(), None, None, None);
 
         registry.insert("+14155551234".into(), record);
         assert!(registry.get("+14155551234").is_some());
@@ -136,7 +136,7 @@ mod tests {
     #[test]
     fn test_registry_serialization() {
         let mut registry = Registry::new();
-        let record = PhoneNumberRecord::new_pending("+14155551234".into(), Some("secret"));
+        let record = PhoneNumberRecord::new_pending("+14155551234".into(), Some("secret"), None, None);
         registry.insert("+14155551234".into(), record);
 
         let json = serde_json::to_string(&registry).unwrap();

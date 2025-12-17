@@ -350,7 +350,7 @@ mod tests {
     #[test]
     fn test_registry_serialization_round_trip() {
         let mut registry = Registry::new();
-        let record = PhoneNumberRecord::new_pending("+14155551234".into(), Some("secret"));
+        let record = PhoneNumberRecord::new_pending("+14155551234".into(), Some("secret"), None, None);
         registry.insert("+14155551234".into(), record);
 
         // Serialize
@@ -384,7 +384,7 @@ mod tests {
             let mut registry = Registry::new();
             registry.insert(
                 "+14155551234".into(),
-                PhoneNumberRecord::new_pending("+14155551234".into(), None),
+                PhoneNumberRecord::new_pending("+14155551234".into(), None, None, None),
             );
             store.save(&registry).await.unwrap();
 
@@ -406,7 +406,7 @@ mod tests {
             let mut registry = Registry::new();
             registry.insert(
                 "+14155551234".into(),
-                PhoneNumberRecord::new_pending("+14155551234".into(), None),
+                PhoneNumberRecord::new_pending("+14155551234".into(), None, None, None),
             );
 
             // Save succeeds

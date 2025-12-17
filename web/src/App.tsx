@@ -1,13 +1,16 @@
+import { useState } from 'react'
 import { BotCard, BotCardSkeleton } from './components/BotCard'
 import { VerificationPanel, VerificationPanelSkeleton } from './components/VerificationPanel'
+import { RegistrationForm } from './components/RegistrationForm'
 import { useBots } from './hooks/useBots'
 import { useAttestation } from './hooks/useAttestation'
-import { motion } from 'framer-motion'
-import { AlertCircle, RefreshCw, Shield, Lock, Cpu } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { AlertCircle, RefreshCw, Shield, Lock, Cpu, Plus, X } from 'lucide-react'
 
 function App() {
   const { data: bots, isLoading: botsLoading, error: botsError, refetch: refetchBots } = useBots()
   const { isLoading: attestationLoading } = useAttestation()
+  const [showRegistration, setShowRegistration] = useState(false)
 
   return (
     <div className="min-h-screen w-full flex flex-col">
@@ -57,9 +60,80 @@ function App() {
         </div>
       </section>
 
-      {/* Bot Cards Section */}
-      <section className="w-full pb-20 md:pb-28">
+      {/* Registration Section */}
+      <section id="register" className="w-full pb-20 md:pb-28">
         <div className="max-w-2xl mx-auto px-6 md:px-12 lg:px-20">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.5 }}
+            className="flex flex-col items-center text-center mb-8"
+          >
+            <h2 className="text-3xl md:text-4xl font-bold mb-4">
+              <span className="gradient-text">Create Your Bot</span>
+            </h2>
+            <p className="text-[var(--text-secondary)] text-lg mb-6">
+              Register a phone number and configure your personal AI assistant
+            </p>
+
+            {!showRegistration && (
+              <button
+                onClick={() => setShowRegistration(true)}
+                className="glass-button glass-button-primary flex items-center gap-2 px-6 py-3"
+              >
+                <Plus className="w-5 h-5" />
+                Register New Bot
+              </button>
+            )}
+          </motion.div>
+
+          <AnimatePresence>
+            {showRegistration && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="relative">
+                  <button
+                    onClick={() => setShowRegistration(false)}
+                    className="absolute -top-2 -right-2 z-10 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
+                  >
+                    <X className="w-4 h-4 text-[var(--text-muted)]" />
+                  </button>
+                  <RegistrationForm
+                    onComplete={() => {
+                      setShowRegistration(false)
+                      refetchBots()
+                    }}
+                  />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </section>
+
+      {/* Bot Cards Section */}
+      <section className="w-full pb-20 md:pb-28 border-t border-white/5 pt-20">
+        <div className="max-w-2xl mx-auto px-6 md:px-12 lg:px-20">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.5 }}
+            className="flex flex-col items-center text-center mb-12"
+          >
+            <h2 className="text-3xl md:text-4xl font-bold mb-4">
+              <span className="gradient-text">Active Bots</span>
+            </h2>
+            <p className="text-[var(--text-secondary)] text-lg">
+              Currently registered AI assistants
+            </p>
+          </motion.div>
+
           {botsError ? (
             <motion.div
               initial={{ opacity: 0 }}
@@ -97,7 +171,7 @@ function App() {
               animate={{ opacity: 1 }}
               className="glass-card p-8 flex flex-col items-center text-center"
             >
-              <p className="text-[var(--text-muted)]">No bots registered yet.</p>
+              <p className="text-[var(--text-muted)]">No bots registered yet. Create one above!</p>
             </motion.div>
           )}
         </div>
