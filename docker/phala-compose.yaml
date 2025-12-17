@@ -54,7 +54,7 @@ services:
 
   signal-registration-proxy:
     # Image hosted on Docker Hub
-    image: zaki1iqlusion/signal-registration-proxy:v0.7.0
+    image: zaki1iqlusion/signal-registration-proxy:v0.8.0
     container_name: signal-registration-proxy
     environment:
       # Signal API (internal)
@@ -66,9 +66,9 @@ services:
       - SERVER__PORT=8081
       # Dstack TEE socket - provided by Phala CVM
       - DSTACK__SOCKET_PATH=/var/run/dstack.sock
-      # Rate limiting
-      - RATE_LIMIT__GLOBAL_PER_MINUTE=${RATE_LIMIT_GLOBAL_PER_MINUTE:-10}
-      - RATE_LIMIT__PER_NUMBER_PER_HOUR=${RATE_LIMIT_PER_NUMBER_PER_HOUR:-3}
+      # Rate limiting (increased for frontend usage)
+      - RATE_LIMIT__GLOBAL_PER_MINUTE=${RATE_LIMIT_GLOBAL_PER_MINUTE:-60}
+      - RATE_LIMIT__PER_NUMBER_PER_HOUR=${RATE_LIMIT_PER_NUMBER_PER_HOUR:-10}
       # Logging
       - LOG__LEVEL=${LOG_LEVEL:-info}
     volumes:

@@ -1,10 +1,10 @@
 //! HTTP request handlers.
 
 use super::types::{
-    AccountInfo, AccountsResponse, BotConfigResponse, BotInfo, DeleteUsernameRequest,
-    HealthResponse, ProfileResponse, RegisterRequest, RegisterResponse, SetUsernameRequest,
-    StatusResponse, UnregisterRequest, UpdateBotConfigRequest, UpdateProfileRequest,
-    UsernameResponse, VerifyRequest, VerifyResponse,
+    AccountInfo, AccountsResponse, AdoptAccountRequest, BotConfigResponse, BotInfo,
+    DeleteUsernameRequest, HealthResponse, ProfileResponse, RegisterRequest, RegisterResponse,
+    SetUsernameRequest, StatusResponse, UnregisterRequest, UpdateBotConfigRequest,
+    UpdateProfileRequest, UsernameResponse, VerifyRequest, VerifyResponse,
 };
 use super::AppState;
 use crate::error::ProxyError;
@@ -386,6 +386,58 @@ pub async fn delete_username(
         username: None,
         username_link: None,
         message: "Username deleted successfully.".to_string(),
+    }))
+}
+
+/// Adopt an existing Signal CLI account into the proxy registry.
+/// This is for accounts that were registered directly with Signal CLI before the proxy was set up.
+pub async fn adopt_account(
+    State(state): State<AppState>,
+    Path(number): Path<String>,
+    Json(request): Json<AdoptAccountRequest>,
+) -> Result<Json<VerifyResponse>, ProxyError> {
+    let number = normalize_phone_number(&number).map_err(ProxyError::InvalidPhoneNumber)?;
+    info!(phone_number = %number, "Adopt account request received");
+
+    // Check if already in our registry as verified
+    let registry = state.registry.read().await;
+    if let Some(record) = registry.get(&number) {
+        if record.status == RegistrationStatus::Verified {
+            return Err(ProxyError::AlreadyRegistered(number));
+        }
+    }
+    drop(registry);
+
+    // Verify the account exists in Signal CLI
+    let signal_accounts = state.signal_client.list_accounts().await?;
+    if !signal_accounts.contains(&number) {
+        return Err(ProxyError::SignalApi(format!(
+            "Account {} not found in Signal CLI. Register it first.",
+            number
+        )));
+    }
+
+    // Create a verified record in our registry
+    let mut record = PhoneNumberRecord::new_pending(
+        number.clone(),
+        request.ownership_secret.as_deref(),
+        request.model.clone(),
+        request.system_prompt.clone(),
+    );
+    record.mark_verified();
+
+    let mut registry = state.registry.write().await;
+    registry.insert(number.clone(), record);
+
+    // Persist to encrypted storage
+    state.store.save(&registry).await?;
+
+    info!(phone_number = %number, "Account adopted into registry");
+
+    Ok(Json(VerifyResponse {
+        phone_number: number,
+        status: "verified".to_string(),
+        message: "Account adopted into registry successfully.".to_string(),
     }))
 }
 

@@ -11,12 +11,14 @@ pub use types::*;
 use crate::registry::{Registry, Store};
 use crate::signal::SignalRegistrationClient;
 use axum::{
+    http::{header, Method},
     middleware as axum_middleware,
     routing::{delete, get, post, put},
     Router,
 };
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
 /// Shared application state.
@@ -68,6 +70,8 @@ pub fn create_router_with_rate_limit(state: AppState, rate_limit: RateLimitState
         .route("/v1/profiles/:number", put(handlers::update_profile))
         .route("/v1/accounts/:number/username", post(handlers::set_username))
         .route("/v1/accounts/:number/username", delete(handlers::delete_username))
+        // Adopt existing Signal CLI account into registry
+        .route("/v1/accounts/:number/adopt", post(handlers::adopt_account))
         // Bot configuration management
         .route("/v1/bots", get(handlers::list_bots))
         .route("/v1/bots/:number", get(handlers::get_bot_config))
@@ -81,5 +85,12 @@ pub fn create_router_with_rate_limit(state: AppState, rate_limit: RateLimitState
         ))
         .layer(axum_middleware::from_fn(logging_middleware))
         .layer(TraceLayer::new_for_http())
+        // CORS layer to allow requests from web frontends
+        .layer(
+            CorsLayer::new()
+                .allow_origin(Any)
+                .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE, Method::OPTIONS])
+                .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION])
+        )
         .with_state(state)
 }

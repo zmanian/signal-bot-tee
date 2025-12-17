@@ -200,6 +200,8 @@ crates/
   signal-client/    # Signal CLI REST API client
   signal-registration-proxy/  # Multi-tenant registration service
   tools/            # Tool use system (calculator, weather, web search)
+web/                # React frontend (Vite + Tailwind, deployed to Vercel)
+docker/             # Docker Compose configs for local and Phala deployment
 ```
 
 ## Registration Proxy
@@ -820,3 +822,114 @@ ports:
 ```
 
 This keeps Signal CLI only accessible internally via the proxy, which is the secure configuration.
+
+## Web Frontend
+
+The project includes a web frontend for TEE verification and bot discovery.
+
+### Tech Stack
+
+- **Framework**: React 19 + Vite 7
+- **Language**: TypeScript
+- **Styling**: Tailwind CSS v4
+- **Data Fetching**: TanStack Query (React Query)
+- **Animations**: Framer Motion
+- **Icons**: Lucide React
+
+### Project Structure
+
+```
+web/
+├── src/
+│   ├── App.tsx              # Main app component
+│   ├── main.tsx             # Entry point
+│   ├── components/
+│   │   ├── Hero.tsx         # Landing hero section
+│   │   ├── BotCard.tsx      # Bot display card
+│   │   ├── RegistrationForm.tsx  # Phone number registration
+│   │   └── VerificationPanel.tsx  # TEE attestation UI
+│   ├── hooks/
+│   │   ├── useBots.ts       # Bot list fetching
+│   │   └── useAttestation.ts  # TEE attestation fetching
+│   └── lib/
+│       └── api.ts           # API client
+├── vercel.json              # Vercel deployment config
+├── package.json
+└── tsconfig.json
+```
+
+### Local Development
+
+```bash
+cd web
+npm install
+npm run dev      # Start dev server at http://localhost:5173
+npm run build    # Build for production
+npm run preview  # Preview production build
+```
+
+### Vercel Deployment
+
+The frontend is deployed to Vercel at: https://signal-tee-web.vercel.app
+
+#### Configuration
+
+`web/vercel.json`:
+```json
+{
+  "framework": "vite",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "env": {
+    "VITE_API_URL": "https://[app-id]-8081.dstack-pha-prod9.phala.network"
+  }
+}
+```
+
+#### Deploying to Vercel
+
+**Option A: Via Vercel CLI**
+
+```bash
+cd web
+npm install -g vercel
+vercel login
+vercel          # Deploy preview
+vercel --prod   # Deploy to production
+```
+
+**Option B: Via GitHub Integration (Recommended)**
+
+1. Push your code to GitHub
+2. Go to https://vercel.com/new
+3. Import the repository
+4. Set root directory to `web`
+5. Vercel auto-detects Vite framework
+6. Add environment variable `VITE_API_URL` pointing to your Phala deployment
+7. Deploy
+
+#### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `VITE_API_URL` | Registration proxy URL (Phala deployment) |
+
+**Updating the API URL**: When you redeploy the backend to a new Phala CVM, update `VITE_API_URL` in:
+1. `web/vercel.json` (for new deployments)
+2. Vercel dashboard → Project Settings → Environment Variables (for existing deployment)
+
+Then redeploy the frontend:
+```bash
+cd web && vercel --prod
+```
+
+#### Production URL
+
+After deployment, Vercel provides a URL like:
+- `https://signal-tee-web.vercel.app` (custom domain or default)
+- `https://signal-tee-web-[team].vercel.app` (team URL)
+
+The frontend connects to the Phala-deployed registration proxy to:
+- List registered Signal bot accounts
+- Fetch TEE attestation data for verification
+- Display bot status and health

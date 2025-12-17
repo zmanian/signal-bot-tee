@@ -137,6 +137,20 @@ pub struct DeleteUsernameRequest {
     pub ownership_secret: Option<String>,
 }
 
+/// Request to adopt an existing Signal CLI account into the registry.
+#[derive(Debug, Deserialize)]
+pub struct AdoptAccountRequest {
+    /// Optional ownership proof secret (will be hashed and stored)
+    /// Required for later unregistration or configuration changes
+    pub ownership_secret: Option<String>,
+
+    /// AI model to use for this bot
+    pub model: Option<String>,
+
+    /// System prompt for the AI assistant
+    pub system_prompt: Option<String>,
+}
+
 /// Request to update bot configuration.
 #[derive(Debug, Deserialize)]
 pub struct UpdateBotConfigRequest {
