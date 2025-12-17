@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8081'
+const API_URL = import.meta.env.VITE_API_URL || 'https://cf847538c919958236086a69ad1a2281103c7fee-8081.dstack-pha-prod9.phala.network'
 
 export interface Bot {
   username: string
