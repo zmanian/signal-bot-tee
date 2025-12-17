@@ -933,3 +933,159 @@ The frontend connects to the Phala-deployed registration proxy to:
 - List registered Signal bot accounts
 - Fetch TEE attestation data for verification
 - Display bot status and health
+
+## Testing with Local Signal CLI
+
+You can test the deployed Phala bot using a local Signal CLI instance. This is useful for automated testing or when you don't want to use your personal Signal app.
+
+### Prerequisites
+
+- Docker installed locally
+- A phone number that can receive SMS (different from the bot's number)
+- The bot deployed on Phala with a registered number
+
+### Step 1: Start Local Signal CLI
+
+```bash
+docker run -d --name signal-cli-local \
+  -p 8080:8080 \
+  -v signal-cli-local:/home/.local/share/signal-cli \
+  bbernhard/signal-cli-rest-api
+```
+
+Wait for it to be healthy:
+```bash
+docker ps | grep signal-cli-local
+# Should show: (healthy)
+```
+
+### Step 2: Register Your Test Phone Number
+
+**Get a captcha token** from https://signalcaptchas.org/registration/generate.html
+
+```bash
+# Register with captcha
+curl -s -X POST "http://localhost:8080/v1/register/+1YOURNUMBER" \
+  -H "Content-Type: application/json" \
+  -d '{"captcha": "signalcaptcha://..."}'
+```
+
+You'll receive an SMS with a verification code. Verify it:
+```bash
+curl -s -X POST "http://localhost:8080/v1/register/+1YOURNUMBER/verify/CODE"
+```
+
+Set a profile name (recommended):
+```bash
+curl -s -X PUT "http://localhost:8080/v1/profiles/+1YOURNUMBER" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Test User"}'
+```
+
+### Step 3: Handle Rate Limiting
+
+Signal aggressively rate-limits new accounts. When sending your first message, you'll likely get:
+
+```
+CAPTCHA proof required for sending to "+BOT_NUMBER", available options "CAPTCHA"
+with challenge token "CHALLENGE_TOKEN"
+```
+
+**Important**: The challenge token must be passed to the captcha URL:
+
+```
+https://signalcaptchas.org/challenge/generate.html?challenge=CHALLENGE_TOKEN
+```
+
+Solve the captcha, then submit it via the CLI inside the container:
+
+```bash
+docker exec signal-cli-local signal-cli \
+  --config /home/.local/share/signal-cli \
+  -a +1YOURNUMBER \
+  submitRateLimitChallenge \
+  --challenge "CHALLENGE_TOKEN" \
+  --captcha "signalcaptcha://..."
+```
+
+**Note**: The REST API endpoint for rate limit challenges often returns 400 errors. Using `signal-cli` directly inside the container is more reliable.
+
+### Step 4: Send Test Messages
+
+```bash
+# Send a message to the bot
+curl -s -X POST "http://localhost:8080/v2/send" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "number": "+1YOURNUMBER",
+    "recipients": ["+BOT_NUMBER"],
+    "message": "What is the current price of Bitcoin"
+  }'
+```
+
+### Step 5: Poll for Responses
+
+```bash
+# Receive messages (including bot responses)
+curl -s "http://localhost:8080/v1/receive/+1YOURNUMBER" | jq .
+```
+
+Example response showing web search working:
+```json
+[
+  {
+    "envelope": {
+      "sourceName": "nearai",
+      "dataMessage": {
+        "message": "🔧 Using web_search..."
+      }
+    }
+  },
+  {
+    "envelope": {
+      "sourceName": "nearai",
+      "dataMessage": {
+        "message": "The current price of Bitcoin (BTC) is approximately **$87,413 USD**..."
+      }
+    }
+  }
+]
+```
+
+### Step 6: Cleanup
+
+```bash
+docker stop signal-cli-local
+docker rm signal-cli-local
+docker volume rm signal-cli-local  # Optional: remove registration data
+```
+
+### Common Issues
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| `CAPTCHA proof required` | New account rate limiting | Submit challenge captcha (see Step 3) |
+| `invalid character '!' in string escape code` | Special chars in message | Avoid `!` and special characters, or properly escape JSON |
+| REST API returns 400 for challenge | API bug | Use `signal-cli` directly inside container |
+| No response from bot | Bot not running or account not adopted | Check Phala logs; re-adopt account if needed |
+
+### Testing the Web Frontend
+
+The web frontend at https://signal-tee-web.vercel.app displays:
+- List of registered bot accounts
+- Signal identity keys (safety numbers) for verification
+- TEE attestation status
+
+To test frontend changes locally:
+
+```bash
+cd web
+npm install
+npm run dev
+# Open http://localhost:5173
+```
+
+The frontend fetches data from the registration proxy API:
+- `GET /v1/bots` - List bots with identity keys
+- `GET /v1/accounts` - List registered accounts
+- `GET /health` - Health check with Signal CLI status
