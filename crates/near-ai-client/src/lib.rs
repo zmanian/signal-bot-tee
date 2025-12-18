@@ -139,9 +139,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_health_check_success() {
-        // health_check uses list_models which returns hardcoded data
-        // So it always succeeds (no API call needed)
+        // health_check calls POST /chat/completions to verify connectivity
         let mock_server = MockServer::start().await;
+        
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&mock_server)
+            .await;
+
         let client = create_test_client(&mock_server).await;
         assert!(client.health_check().await);
     }

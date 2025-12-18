@@ -13,16 +13,21 @@ COPY crates/conversation-store/Cargo.toml crates/conversation-store/
 COPY crates/dstack-client/Cargo.toml crates/dstack-client/
 COPY crates/signal-client/Cargo.toml crates/signal-client/
 COPY crates/signal-registration-proxy/Cargo.toml crates/signal-registration-proxy/
+COPY crates/tools/Cargo.toml crates/tools/
 
 # Create dummy source files for dependency caching
 RUN mkdir -p crates/signal-bot/src/commands && \
+    echo "pub mod commands; pub mod config; pub mod error;" > crates/signal-bot/src/lib.rs && \
     echo "fn main() {}" > crates/signal-bot/src/main.rs && \
     echo "" > crates/signal-bot/src/commands/mod.rs && \
     mkdir -p crates/near-ai-client/src && echo "pub fn dummy() {}" > crates/near-ai-client/src/lib.rs && \
     mkdir -p crates/conversation-store/src && echo "pub fn dummy() {}" > crates/conversation-store/src/lib.rs && \
     mkdir -p crates/dstack-client/src && echo "pub fn dummy() {}" > crates/dstack-client/src/lib.rs && \
     mkdir -p crates/signal-client/src && echo "pub fn dummy() {}" > crates/signal-client/src/lib.rs && \
-    mkdir -p crates/signal-registration-proxy/src && echo "fn main() {}" > crates/signal-registration-proxy/src/main.rs
+    mkdir -p crates/signal-registration-proxy/src && \
+    echo "pub mod api; pub mod config; pub mod error; pub mod registry; pub mod signal;" > crates/signal-registration-proxy/src/lib.rs && \
+    echo "fn main() {}" > crates/signal-registration-proxy/src/main.rs && \
+    mkdir -p crates/tools/src && echo "pub fn dummy() {}" > crates/tools/src/lib.rs
 
 # Build dependencies only (ignore errors from dummy files)
 RUN cargo build --release 2>/dev/null || true

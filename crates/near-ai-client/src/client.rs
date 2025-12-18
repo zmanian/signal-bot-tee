@@ -278,12 +278,24 @@ impl NearAiClient {
     }
 
     /// Health check - returns true if API is reachable.
-    /// Actually tests connectivity by fetching models from the API.
+    /// Tests connectivity by sending a minimal chat completion request.
     pub async fn health_check(&self) -> bool {
+        let request = ChatRequest {
+            model: self.model.clone(),
+            messages: vec![Message::user("ping")],
+            temperature: None,
+            max_tokens: Some(1),
+            stream: Some(false),
+            tools: None,
+            tool_choice: None,
+        };
+
         match self
             .client
-            .get(format!("{}/models", self.base_url))
+            .post(format!("{}/chat/completions", self.base_url))
             .header("Authorization", format!("Bearer {}", self.api_key.expose_secret()))
+            .header("Content-Type", "application/json")
+            .json(&request)
             .send()
             .await
         {

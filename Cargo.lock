@@ -1391,6 +1391,8 @@ dependencies = [
 name = "near-ai-client"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "dotenvy",
  "futures",
  "reqwest",
  "secrecy",
@@ -1401,6 +1403,7 @@ dependencies = [
  "tokio-stream",
  "tokio-test",
  "tracing",
+ "tracing-subscriber",
  "wiremock",
 ]
 
@@ -2236,6 +2239,7 @@ dependencies = [
  "tools",
  "tracing",
  "tracing-subscriber",
+ "wiremock",
 ]
 
 [[package]]

@@ -1,12 +1,8 @@
 //! Signal AI Proxy Bot - Main entry point.
 
-mod commands;
-mod config;
-mod error;
-
-use crate::commands::*;
-use crate::config::Config;
-use crate::error::AppResult;
+use signal_bot::commands::*;
+use signal_bot::config::Config;
+use signal_bot::error::AppResult;
 use anyhow::Context;
 use conversation_store::ConversationStore;
 use dstack_client::DstackClient;
@@ -20,7 +16,7 @@ use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 /// Create and configure tool registry based on config.
-fn create_tool_registry(config: &crate::config::ToolsConfig) -> ToolRegistry {
+fn create_tool_registry(config: &signal_bot::config::ToolsConfig) -> ToolRegistry {
     let mut registry = ToolRegistry::new();
 
     if !config.enabled {
