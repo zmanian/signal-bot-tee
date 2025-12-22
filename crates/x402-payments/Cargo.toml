@@ -50,6 +50,9 @@ dstack-client = { path = "../dstack-client" }
 # EVM / HTTP client for Base chain RPC
 reqwest = { version = "0.11", features = ["json"] }
 
+# Base58 encoding for Solana addresses
+bs58 = "0.5"
+
 # Solana
 # Note: Add when implementing Solana chain
 # x402-sdk-solana-rust = "0.1"
