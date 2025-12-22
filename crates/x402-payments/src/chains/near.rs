@@ -11,7 +11,9 @@ use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
 // NEAR crypto for ed25519 signing
-use near_crypto::{InMemorySigner, KeyType, SecretKey};
+use near_crypto::{InMemorySigner, SecretKey};
+// ed25519-dalek for direct keypair creation
+use ed25519_dalek;
 // NEAR primitives for transaction types
 use near_primitives::{
     transaction::{Action, FunctionCallAction, SignedTransaction, Transaction, TransactionV0},
@@ -164,13 +166,24 @@ impl NearFacilitator {
             .build()
             .map_err(|e| PaymentError::Internal(format!("Failed to create HTTP client: {}", e)))?;
 
-        Ok(Self {
+        let facilitator = Self {
             config,
             signer,
             deposit_account,
             rpc_client,
             client,
-        })
+        };
+
+        // Check if account is funded (warning only, don't fail construction)
+        if let Err(e) = facilitator.ensure_account_funded().await {
+            warn!(
+                "NEAR deposit account may not be funded yet: {}. \
+                Transfers will fail until the account is funded with at least 0.001 NEAR.",
+                e
+            );
+        }
+
+        Ok(facilitator)
     }
 
     /// Derive wallet (signer + account) from TEE key.
@@ -193,7 +206,12 @@ impl NearFacilitator {
         }
 
         // Use first 32 bytes as ed25519 secret key
-        let secret_key = SecretKey::from_seed(KeyType::ED25519, &hex::encode(&key_bytes[..32]));
+        // Create the keypair directly from the 32-byte seed
+        let mut seed = [0u8; 32];
+        seed.copy_from_slice(&key_bytes[..32]);
+
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&seed);
+        let secret_key = SecretKey::ED25519(near_crypto::ED25519SecretKey(signing_key.to_keypair_bytes()));
 
         // Get public key
         let public_key = secret_key.public_key();
@@ -295,6 +313,53 @@ impl NearFacilitator {
             .map_err(|e| PaymentError::RpcError(format!("Failed to get latest block: {}", e)))?;
 
         Ok(response)
+    }
+
+    /// Check if the deposit account is funded.
+    ///
+    /// Implicit accounts on NEAR must be funded before they can perform transactions.
+    /// This method queries the account and checks if it has sufficient NEAR balance.
+    async fn ensure_account_funded(&self) -> Result<(), PaymentError> {
+        let request = methods::query::RpcQueryRequest {
+            block_reference: BlockReference::Finality(Finality::Final),
+            request: near_primitives::views::QueryRequest::ViewAccount {
+                account_id: self.deposit_account.clone(),
+            },
+        };
+
+        match self.rpc_client.call(request).await {
+            Ok(response) => {
+                match response.kind {
+                    QueryResponseKind::ViewAccount(account_view) => {
+                        // Check if account has at least 0.001 NEAR for gas (1e21 yoctoNEAR)
+                        const MIN_BALANCE: u128 = 1_000_000_000_000_000_000_000; // 0.001 NEAR
+
+                        if account_view.amount < MIN_BALANCE {
+                            return Err(PaymentError::Internal(format!(
+                                "Deposit account {} has insufficient NEAR balance: {} yoctoNEAR (need at least {} for gas)",
+                                self.deposit_account, account_view.amount, MIN_BALANCE
+                            )));
+                        }
+
+                        debug!(
+                            "Deposit account {} is funded with {} yoctoNEAR",
+                            self.deposit_account, account_view.amount
+                        );
+                        Ok(())
+                    }
+                    _ => Err(PaymentError::RpcError(
+                        "Unexpected response type for account query".to_string(),
+                    )),
+                }
+            }
+            Err(e) => {
+                // Account doesn't exist
+                Err(PaymentError::Internal(format!(
+                    "Deposit account {} does not exist. Please fund the implicit account with at least 0.001 NEAR before use. Error: {}",
+                    self.deposit_account, e
+                )))
+            }
+        }
     }
 
     /// Broadcast signed transaction and wait for finality.
@@ -515,6 +580,9 @@ impl ChainFacilitator for NearFacilitator {
             "Transferring {} USDC from {} to {} on NEAR",
             amount, self.deposit_account, destination
         );
+
+        // Ensure the deposit account is funded before attempting transfer
+        self.ensure_account_funded().await?;
 
         // Parse destination as AccountId
         let receiver_id: AccountId = destination

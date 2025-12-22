@@ -71,6 +71,7 @@ near-crypto = "0.28"
 near-primitives = "0.28"
 near-jsonrpc-client = "0.15"
 near-jsonrpc-primitives = "0.28"
+ed25519-dalek = "2.2"  # For direct keypair creation from bytes
 
 # Solana - using latest compatible versions
 solana-sdk = "2.2"
