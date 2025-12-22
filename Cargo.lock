@@ -3369,6 +3369,7 @@ dependencies = [
  "humantime-serde",
  "mockall",
  "rand 0.8.5",
+ "reqwest",
  "secrecy",
  "serde",
  "serde_json",

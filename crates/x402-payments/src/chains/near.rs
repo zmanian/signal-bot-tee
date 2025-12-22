@@ -88,15 +88,18 @@ impl ChainFacilitator for NearFacilitator {
         &self,
         payload: &PaymentPayload,
     ) -> Result<PaymentVerification, PaymentError> {
-        // For NEAR, the signature field contains the tx hash
-        // The sender contains the NEAR account ID
-        // We verify the tx was a valid ft_transfer to our deposit account
+        // tx_hash contains the NEAR transaction hash
+        // from contains the sender NEAR account ID (optional)
+        // user_id contains the phone number (used as memo verification)
+
+        let from = payload.from.as_deref().unwrap_or("");
+        let amount = payload.amount.unwrap_or(0);
 
         self.verify_usdc_transfer(
-            &payload.signature,
-            &payload.sender,
-            payload.amount,
-            &payload.sender, // memo should be phone number
+            &payload.tx_hash,
+            from,
+            amount,
+            &payload.user_id, // memo should be phone number
         )
         .await
     }

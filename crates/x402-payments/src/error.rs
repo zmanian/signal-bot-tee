@@ -37,6 +37,34 @@ pub enum PaymentError {
     #[error("Network error: {0}")]
     NetworkError(String),
 
+    /// RPC call failed.
+    #[error("RPC error: {0}")]
+    RpcError(String),
+
+    /// Transaction not found.
+    #[error("Transaction not found: {0}")]
+    TxNotFound(String),
+
+    /// Transaction failed/reverted.
+    #[error("Transaction failed: {0}")]
+    TxFailed(String),
+
+    /// Invalid transaction hash.
+    #[error("Invalid transaction hash: {0}")]
+    InvalidTxHash(String),
+
+    /// No transfer found in transaction.
+    #[error("No transfer found: {0}")]
+    NoTransferFound(String),
+
+    /// Sender address mismatch.
+    #[error("Sender mismatch: expected {expected}, got {actual}")]
+    SenderMismatch { expected: String, actual: String },
+
+    /// Amount mismatch.
+    #[error("Amount mismatch: expected {expected}, got {actual}")]
+    AmountMismatch { expected: u64, actual: u64 },
+
     /// Encryption/decryption error.
     #[error("Encryption error: {0}")]
     Encryption(String),

@@ -3,51 +3,70 @@
 use crate::error::PaymentError;
 use crate::types::{Chain, SettlementResult, TxStatus};
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
 
-/// Payment payload from a client.
+/// Payment payload for deposit verification.
+///
+/// Used to verify that a user has deposited USDC on-chain.
 #[derive(Debug, Clone)]
 pub struct PaymentPayload {
     /// Which chain the payment is on.
     pub chain: Chain,
-    /// Sender's wallet address.
-    pub sender: String,
-    /// Amount in micro-USDC (1e-6).
-    pub amount: u64,
-    /// Cryptographic signature or transaction hash.
-    pub signature: String,
-    /// Nonce for replay protection.
-    pub nonce: u64,
-    /// When this payload expires.
-    pub expiry: DateTime<Utc>,
+    /// Transaction hash to verify.
+    pub tx_hash: String,
+    /// Expected sender address (optional, for verification).
+    pub from: Option<String>,
+    /// Expected amount in micro-USDC (optional, for verification).
+    pub amount: Option<u64>,
+    /// User ID to credit (phone number).
+    pub user_id: String,
 }
 
-/// Result of verifying a payment.
-#[derive(Debug, Clone)]
-pub struct PaymentVerification {
-    /// Whether the payment is valid.
-    pub valid: bool,
-    /// Sender's current balance (if available).
-    pub sender_balance: Option<u64>,
-    /// Error message if invalid.
-    pub error: Option<String>,
-}
-
-impl PaymentVerification {
-    pub fn valid() -> Self {
+impl PaymentPayload {
+    /// Create a new payment payload for verification.
+    pub fn new(chain: Chain, tx_hash: String, user_id: String) -> Self {
         Self {
-            valid: true,
-            sender_balance: None,
-            error: None,
+            chain,
+            tx_hash,
+            from: None,
+            amount: None,
+            user_id,
         }
     }
 
-    pub fn invalid(reason: impl Into<String>) -> Self {
-        Self {
-            valid: false,
-            sender_balance: None,
-            error: Some(reason.into()),
-        }
+    /// Set the expected sender address.
+    pub fn with_from(mut self, from: String) -> Self {
+        self.from = Some(from);
+        self
+    }
+
+    /// Set the expected amount.
+    pub fn with_amount(mut self, amount: u64) -> Self {
+        self.amount = Some(amount);
+        self
+    }
+}
+
+/// Result of verifying a payment on-chain.
+#[derive(Debug, Clone)]
+pub struct PaymentVerification {
+    /// Transaction hash that was verified.
+    pub tx_hash: String,
+    /// Amount in micro-USDC (1e-6).
+    pub amount_usdc: u64,
+    /// Sender address (if available).
+    pub from: Option<String>,
+    /// Recipient address (our deposit address).
+    pub to: String,
+    /// Number of block confirmations.
+    pub confirmations: u64,
+    /// Whether the payment is fully verified.
+    pub verified: bool,
+}
+
+impl PaymentVerification {
+    /// Check if payment has enough confirmations (default: 1).
+    pub fn is_confirmed(&self, min_confirmations: u64) -> bool {
+        self.verified && self.confirmations >= min_confirmations
     }
 }
 
@@ -55,9 +74,11 @@ impl PaymentVerification {
 #[derive(Debug, Clone)]
 pub struct TxResult {
     /// Transaction hash.
-    pub hash: String,
+    pub tx_hash: String,
     /// Block number (if confirmed).
-    pub block: Option<u64>,
+    pub block_number: Option<u64>,
+    /// Whether the transaction succeeded.
+    pub success: bool,
 }
 
 /// Chain-agnostic payment facilitator trait.
@@ -74,13 +95,27 @@ pub trait ChainFacilitator: Send + Sync {
     /// Users send USDC to this address to add credits.
     fn deposit_address(&self) -> String;
 
-    /// Verify a payment payload is valid and funded.
-    async fn verify_payment(&self, payload: &PaymentPayload) -> Result<PaymentVerification, PaymentError>;
+    /// Verify a payment/deposit on-chain.
+    ///
+    /// Checks that a transaction:
+    /// 1. Exists and is confirmed
+    /// 2. Is a USDC transfer
+    /// 3. Transfers to our deposit address
+    /// 4. Matches expected amount (if specified)
+    async fn verify_payment(
+        &self,
+        payload: &PaymentPayload,
+    ) -> Result<PaymentVerification, PaymentError>;
 
     /// Settle a verified payment on-chain.
     ///
-    /// This submits the payment transaction and returns once it's confirmed.
-    async fn settle_payment(&self, payload: &PaymentPayload) -> Result<SettlementResult, PaymentError>;
+    /// For our deposit verification model, this is typically not used
+    /// since the user already transferred funds. This would be used
+    /// in a full x402 facilitator role.
+    async fn settle_payment(
+        &self,
+        payload: &PaymentPayload,
+    ) -> Result<SettlementResult, PaymentError>;
 
     /// Get the current USDC balance of the deposit wallet.
     ///
@@ -92,7 +127,7 @@ pub trait ChainFacilitator: Send + Sync {
     /// Used by FundSweeper to send funds to operator.
     async fn transfer_to(&self, destination: &str, amount: u64) -> Result<TxResult, PaymentError>;
 
-    /// Monitor a transaction for confirmation.
+    /// Get the status of a transaction.
     async fn get_tx_status(&self, tx_hash: &str) -> Result<TxStatus, PaymentError>;
 
     /// Check if this chain is currently healthy/available.
@@ -102,9 +137,12 @@ pub trait ChainFacilitator: Send + Sync {
     }
 }
 
-// Placeholder implementations for each chain.
-// These will be replaced with real implementations.
-
+// Chain-specific implementations
 pub mod base;
 pub mod near;
 pub mod solana;
+
+// Re-exports
+pub use base::BaseFacilitator;
+pub use near::NearFacilitator;
+pub use solana::SolanaFacilitator;

@@ -47,10 +47,8 @@ rand = "0.8"
 # TEE integration
 dstack-client = { path = "../dstack-client" }
 
-# x402 protocol (EVM)
-# Note: Add when implementing Base chain
-# x402-rs = "0.10"
-# x402-axum = "0.1"
+# EVM / HTTP client for Base chain RPC
+reqwest = { version = "0.11", features = ["json"] }
 
 # Solana
 # Note: Add when implementing Solana chain
