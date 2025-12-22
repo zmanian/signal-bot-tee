@@ -675,9 +675,14 @@ impl ChainFacilitator for NearFacilitator {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    // TODO: Add tests with mocked DstackClient
-    // The new constructor requires a DstackClient to derive the wallet
-    // which makes testing more complex but more realistic
+    // Note: Integration tests for NearFacilitator require a real DstackClient
+    // to derive the ed25519 wallet keypair from TEE-derived entropy.
+    //
+    // Unit tests here would need to mock DstackClient, which is complex.
+    // Instead, we rely on:
+    // 1. Integration tests that run in a real TEE environment (marked #[ignore])
+    // 2. The comprehensive tests in credits::store that validate the overall flow
+    // 3. Manual testing with real NEAR testnet/mainnet transactions
+    //
+    // Future work: Create a mock DstackClient for unit testing chain facilitators
 }
