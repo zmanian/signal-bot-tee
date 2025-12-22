@@ -53,13 +53,30 @@ reqwest = { version = "0.11", features = ["json"] }
 # Base58 encoding for Solana addresses
 bs58 = "0.5"
 
-# Solana
-# Note: Add when implementing Solana chain
-# x402-sdk-solana-rust = "0.1"
+# EVM/Base chain support via Alloy
+alloy = { version = "1.1", features = [
+    "contract",
+    "network",
+    "provider-http",
+    "rpc-types",
+    "signer-local",
+    "sol-types",
+] }
 
-# NEAR
-# Note: Add when implementing NEAR chain
-# near-jsonrpc-client = "0.8"
+# Force compatible elliptic-curve version for alloy
+elliptic-curve = "0.13.8"
+
+# NEAR Protocol
+near-crypto = "0.28"
+near-primitives = "0.28"
+near-jsonrpc-client = "0.15"
+near-jsonrpc-primitives = "0.28"
+
+# Solana - using latest compatible versions
+solana-sdk = "2.2"
+solana-client = "2.2"
+spl-token = "7.0"
+spl-associated-token-account = "6.0"
 
 [dev-dependencies]
 tokio-test = { workspace = true }
