@@ -564,7 +564,7 @@ impl ChainFacilitator for NearFacilitator {
 
     async fn get_deposit_wallet_balance(&self) -> Result<u64, PaymentError> {
         let balance = self
-            .get_ft_balance(&self.config.usdc_contract, &self.deposit_account.to_string())
+            .get_ft_balance(&self.config.usdc_contract, self.deposit_account.as_ref())
             .await?;
 
         debug!("NEAR deposit wallet balance: {} USDC (micro)", balance);
