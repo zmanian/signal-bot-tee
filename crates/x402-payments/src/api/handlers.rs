@@ -1,6 +1,7 @@
 //! HTTP API handlers.
 
 use super::types::*;
+use crate::chains::{BaseFacilitator, ChainFacilitator, NearFacilitator, SolanaFacilitator};
 use crate::config::PaymentConfig;
 use crate::credits::{CreditStore, PricingCalculator};
 use crate::error::PaymentError;
@@ -20,22 +21,27 @@ pub struct AppState {
     pub credit_store: Arc<CreditStore>,
     pub config: PaymentConfig,
     pub pricing: PricingCalculator,
-    // TODO: Add chain facilitators when implemented
-    // pub base: Option<Arc<BaseFacilitator>>,
-    // pub near: Option<Arc<NearFacilitator>>,
-    // pub solana: Option<Arc<SolanaFacilitator>>,
+    pub base: Option<Arc<BaseFacilitator>>,
+    pub near: Option<Arc<NearFacilitator>>,
+    pub solana: Option<Arc<SolanaFacilitator>>,
 }
 
 impl AppState {
     pub fn new(
         credit_store: Arc<CreditStore>,
         config: PaymentConfig,
+        base: Option<Arc<BaseFacilitator>>,
+        near: Option<Arc<NearFacilitator>>,
+        solana: Option<Arc<SolanaFacilitator>>,
     ) -> Self {
         let pricing = PricingCalculator::new(config.pricing.clone());
         Self {
             credit_store,
             config,
             pricing,
+            base,
+            near,
+            solana,
         }
     }
 }
@@ -54,26 +60,48 @@ pub fn create_router(state: Arc<AppState>) -> Router {
 
 /// Health check endpoint.
 async fn health_check(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    // Check health of each chain facilitator
+    let base_health = if let Some(ref facilitator) = state.base {
+        facilitator.health_check().await.unwrap_or(false)
+    } else {
+        false
+    };
+
+    let near_health = if let Some(ref facilitator) = state.near {
+        facilitator.health_check().await.unwrap_or(false)
+    } else {
+        false
+    };
+
+    let solana_health = if let Some(ref facilitator) = state.solana {
+        facilitator.health_check().await.unwrap_or(false)
+    } else {
+        false
+    };
+
     let chains = vec![
         ChainHealth {
             chain: Chain::Base,
             enabled: state.config.base.as_ref().is_some_and(|c| c.enabled),
-            healthy: true, // TODO: Check actual health
+            healthy: base_health,
         },
         ChainHealth {
             chain: Chain::Near,
             enabled: state.config.near.as_ref().is_some_and(|c| c.enabled),
-            healthy: true,
+            healthy: near_health,
         },
         ChainHealth {
             chain: Chain::Solana,
             enabled: state.config.solana.as_ref().is_some_and(|c| c.enabled),
-            healthy: true,
+            healthy: solana_health,
         },
     ];
 
+    // Overall health is true if at least one chain is healthy
+    let overall_healthy = base_health || near_health || solana_health;
+
     Json(HealthResponse {
-        healthy: true,
+        healthy: overall_healthy,
         payments_enabled: state.config.enabled,
         chains,
     })
@@ -137,22 +165,77 @@ async fn process_deposit(
         ));
     }
 
-    // TODO: Verify payment on-chain
-    // let verification = facilitator.verify_payment(&payload).await?;
-    // if !verification.valid {
-    //     return Err(...);
-    // }
+    // Verify payment on-chain using appropriate facilitator
+    use crate::chains::PaymentPayload;
 
-    // For now, trust the claimed amount (will be verified when chain support is added)
-    let credits = state.pricing.usdc_to_credits(request.amount);
+    let payload = PaymentPayload::new(
+        request.chain,
+        request.tx_hash.clone(),
+        request.user_id.clone(),
+    )
+    .with_amount(request.amount);
 
-    let deposit = Deposit::new_pending(
+    let verification = match request.chain {
+        Chain::Base => {
+            let facilitator = state.base.as_ref().ok_or_else(|| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse::new("Base facilitator not initialized", "CHAIN_NOT_AVAILABLE")),
+                )
+            })?;
+            facilitator.verify_payment(&payload).await
+        }
+        Chain::Near => {
+            let facilitator = state.near.as_ref().ok_or_else(|| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse::new("NEAR facilitator not initialized", "CHAIN_NOT_AVAILABLE")),
+                )
+            })?;
+            facilitator.verify_payment(&payload).await
+        }
+        Chain::Solana => {
+            let facilitator = state.solana.as_ref().ok_or_else(|| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse::new("Solana facilitator not initialized", "CHAIN_NOT_AVAILABLE")),
+                )
+            })?;
+            facilitator.verify_payment(&payload).await
+        }
+    }
+    .map_err(|e| {
+        error!("Payment verification failed: {}", e);
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse::new(e.to_string(), "VERIFICATION_FAILED")),
+        )
+    })?;
+
+    if !verification.verified {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse::new(
+                "Payment verification failed",
+                "VERIFICATION_FAILED",
+            )),
+        ));
+    }
+
+    // Use verified amount from blockchain
+    let verified_amount = verification.amount_usdc;
+    let credits = state.pricing.usdc_to_credits(verified_amount);
+
+    let mut deposit = Deposit::new_pending(
         request.user_id.clone(),
         request.chain,
         request.tx_hash.clone(),
-        request.amount,
+        verified_amount,
         credits,
     );
+
+    // Mark as confirmed since verification succeeded
+    deposit.confirm();
 
     let deposit_id = deposit.id.clone();
     let tx_hash = deposit.tx_hash.clone();
@@ -160,8 +243,8 @@ async fn process_deposit(
     match state.credit_store.add_credits(deposit).await {
         Ok(balance) => {
             info!(
-                "Processed deposit for {}: {} credits",
-                request.user_id, credits
+                "Processed deposit for {}: {} USDC = {} credits",
+                request.user_id, verified_amount, credits
             );
 
             Ok(Json(DepositResponse {
@@ -209,7 +292,7 @@ async fn get_deposit_address(
         }
     };
 
-    // TODO: Get actual deposit addresses from facilitators
+    // Get actual deposit addresses from facilitators
     let (address, token_contract) = match chain {
         Chain::Base => {
             let config = state.config.base.as_ref().ok_or_else(|| {
@@ -218,8 +301,14 @@ async fn get_deposit_address(
                     Json(ErrorResponse::new("Base not configured", "CHAIN_DISABLED")),
                 )
             })?;
+            let facilitator = state.base.as_ref().ok_or_else(|| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse::new("Base facilitator not initialized", "CHAIN_NOT_AVAILABLE")),
+                )
+            })?;
             (
-                "0x0000000000000000000000000000000000000000".to_string(), // TODO: Real address
+                facilitator.deposit_address(),
                 config.usdc_contract.clone(),
             )
         }
@@ -230,8 +319,14 @@ async fn get_deposit_address(
                     Json(ErrorResponse::new("NEAR not configured", "CHAIN_DISABLED")),
                 )
             })?;
+            let facilitator = state.near.as_ref().ok_or_else(|| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse::new("NEAR facilitator not initialized", "CHAIN_NOT_AVAILABLE")),
+                )
+            })?;
             (
-                "deposit.signal-bot.near".to_string(), // TODO: Real address
+                facilitator.deposit_address(),
                 config.usdc_contract.clone(),
             )
         }
@@ -242,8 +337,14 @@ async fn get_deposit_address(
                     Json(ErrorResponse::new("Solana not configured", "CHAIN_DISABLED")),
                 )
             })?;
+            let facilitator = state.solana.as_ref().ok_or_else(|| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse::new("Solana facilitator not initialized", "CHAIN_NOT_AVAILABLE")),
+                )
+            })?;
             (
-                "11111111111111111111111111111111".to_string(), // TODO: Real address
+                facilitator.deposit_address(),
                 config.usdc_mint.clone(),
             )
         }
@@ -266,11 +367,20 @@ async fn get_pricing(State(state): State<Arc<AppState>>) -> Json<PricingResponse
         .config
         .enabled_chains()
         .into_iter()
-        .map(|chain| ChainInfo {
-            chain,
-            enabled: true,
-            token: "USDC".to_string(),
-            deposit_address: "TODO".to_string(), // TODO: Get from facilitators
+        .filter_map(|chain| {
+            // Get deposit address from facilitator
+            let deposit_address = match chain {
+                Chain::Base => state.base.as_ref().map(|f| f.deposit_address()),
+                Chain::Near => state.near.as_ref().map(|f| f.deposit_address()),
+                Chain::Solana => state.solana.as_ref().map(|f| f.deposit_address()),
+            };
+
+            deposit_address.map(|address| ChainInfo {
+                chain,
+                enabled: true,
+                token: "USDC".to_string(),
+                deposit_address: address,
+            })
         })
         .collect();
 

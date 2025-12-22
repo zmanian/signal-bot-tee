@@ -63,7 +63,8 @@ pub async fn start_payment_server(
     let credit_store = CreditStore::new(dstack, config.storage_path.clone()).await?;
 
     // Create app state
-    let state = Arc::new(AppState::new(credit_store, config.clone()));
+    // Note: Chain facilitators should be initialized and passed by the integration layer
+    let state = Arc::new(AppState::new(credit_store, config.clone(), None, None, None));
 
     // Create router
     let router = api::create_router(state);
@@ -97,7 +98,8 @@ pub async fn spawn_payment_server(
     }
 
     let credit_store = CreditStore::new(dstack, config.storage_path.clone()).await?;
-    let state = Arc::new(AppState::new(credit_store, config.clone()));
+    // Note: Chain facilitators should be initialized and passed by the integration layer
+    let state = Arc::new(AppState::new(credit_store, config.clone(), None, None, None));
     let router = api::create_router(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], config.server_port));
