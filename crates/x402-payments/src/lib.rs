@@ -28,6 +28,7 @@ pub mod chains;
 pub mod config;
 pub mod credits;
 pub mod error;
+pub mod sweeper;
 pub mod types;
 
 // Re-exports for convenience
@@ -35,7 +36,8 @@ pub use config::PaymentConfig;
 pub use config::PricingConfig;
 pub use credits::{calculate_credits, estimate_credits, CreditStore, PricingCalculator, TokenUsage};
 pub use error::PaymentError;
-pub use types::{Chain, CreditBalance, Deposit, DepositStatus, UsageRecord};
+pub use sweeper::{spawn_sweeper, FundSweeper};
+pub use types::{Chain, CreditBalance, Deposit, DepositStatus, OperatorAddresses, SweepRecord, UsageRecord};
 
 use api::AppState;
 use dstack_client::DstackClient;

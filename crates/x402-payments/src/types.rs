@@ -242,4 +242,28 @@ impl OperatorAddresses {
             Chain::Solana => self.solana.as_deref(),
         }
     }
+
+    /// Check if any operator address is configured.
+    pub fn has_any(&self) -> bool {
+        self.base.is_some() || self.near.is_some() || self.solana.is_some()
+    }
+}
+
+/// Record of a fund sweep operation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SweepRecord {
+    /// Chain where the sweep occurred.
+    pub chain: Chain,
+    /// Deposit address (source).
+    pub from: String,
+    /// Operator address (destination).
+    pub to: String,
+    /// Amount swept in micro-USDC.
+    pub amount: u64,
+    /// Transaction hash.
+    pub tx_hash: String,
+    /// Whether the sweep succeeded.
+    pub success: bool,
+    /// When the sweep occurred.
+    pub timestamp: DateTime<Utc>,
 }
