@@ -132,6 +132,9 @@ impl NearAiClient {
         debug!("Response status: {}", response.status());
         let chat_response = self.handle_response::<ChatResponse>(response).await?;
 
+        // Extract usage before consuming response
+        let usage = chat_response.usage;
+
         // Extract from first choice
         let choice = chat_response
             .choices
@@ -143,6 +146,7 @@ impl NearAiClient {
             content: choice.message.content,
             tool_calls: choice.message.tool_calls,
             finish_reason: choice.finish_reason.unwrap_or_default(),
+            usage,
         })
     }
 

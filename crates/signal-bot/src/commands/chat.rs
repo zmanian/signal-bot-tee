@@ -12,6 +12,9 @@ use signal_client::{BotMessage, SignalClient};
 use std::sync::Arc;
 use tools::{FunctionCall as ToolsFunctionCall, ToolCall as ToolsToolCall, ToolExecutor, ToolRegistry};
 use tracing::{debug, error, info, instrument, warn};
+use x402_payments::{
+    calculate_credits, estimate_credits, CreditStore, PricingConfig, TokenUsage, UsageRecord,
+};
 
 pub struct ChatHandler {
     near_ai: Arc<NearAiClient>,
@@ -21,6 +24,10 @@ pub struct ChatHandler {
     tool_registry: Arc<ToolRegistry>,
     system_prompt: String,
     max_tool_iterations: usize,
+    /// Optional credit store for payment integration.
+    credit_store: Option<Arc<CreditStore>>,
+    /// Pricing configuration.
+    pricing_config: PricingConfig,
 }
 
 impl ChatHandler {
@@ -40,6 +47,42 @@ impl ChatHandler {
             tool_registry,
             system_prompt,
             max_tool_iterations,
+            credit_store: None,
+            pricing_config: PricingConfig::default(),
+        }
+    }
+
+    /// Create a new ChatHandler with payment integration.
+    pub fn with_payments(
+        near_ai: Arc<NearAiClient>,
+        conversations: Arc<ConversationStore>,
+        signal_client: Arc<SignalClient>,
+        tool_registry: Arc<ToolRegistry>,
+        system_prompt: String,
+        max_tool_iterations: usize,
+        credit_store: Arc<CreditStore>,
+        pricing_config: PricingConfig,
+    ) -> Self {
+        Self {
+            near_ai,
+            conversations,
+            signal_client,
+            tool_executor: Arc::new(ToolExecutor::new(tool_registry.clone())),
+            tool_registry,
+            system_prompt,
+            max_tool_iterations,
+            credit_store: Some(credit_store),
+            pricing_config,
+        }
+    }
+
+    /// Format credits as USDC for display.
+    fn format_credits(credits: u64) -> String {
+        let usdc = credits as f64 / 1_000_000.0;
+        if usdc < 0.01 {
+            format!("${:.4}", usdc)
+        } else {
+            format!("${:.2}", usdc)
         }
     }
 
@@ -123,6 +166,8 @@ impl CommandHandler for ChatHandler {
         // - For DMs: sender's phone number
         // - For groups: group_id (shared context for all members)
         let conversation_id = message.reply_target();
+        // For credits, use the sender's phone number (not group ID)
+        let user_id = &message.source;
 
         if message.is_group {
             info!(
@@ -137,6 +182,19 @@ impl CommandHandler for ChatHandler {
                 &conversation_id[..conversation_id.len().min(8)],
                 &message.text[..message.text.len().min(50)]
             );
+        }
+
+        // Pre-flight credit check (if payments enabled)
+        if let Some(ref credit_store) = self.credit_store {
+            let estimated_credits = estimate_credits(message.text.len(), &self.pricing_config);
+            if !credit_store.has_credits(user_id, estimated_credits).await {
+                let balance = credit_store.get_balance(user_id).await;
+                return Ok(format!(
+                    "Insufficient credits. You have {} remaining.\n\n\
+                     Use `!deposit` to add USDC and get more credits.",
+                    Self::format_credits(balance.credits_remaining)
+                ));
+            }
         }
 
         // Add user message to history
@@ -160,6 +218,10 @@ impl CommandHandler for ChatHandler {
 
         // Tool execution loop - only offer tools on first iteration
         let mut tools_executed = false;
+        // Track total token usage across all iterations (for credit deduction)
+        let mut total_prompt_tokens: u32 = 0;
+        let mut total_completion_tokens: u32 = 0;
+
         for iteration in 0..self.max_tool_iterations {
             debug!("Tool execution loop iteration {}, tools_executed={}", iteration, tools_executed);
 
@@ -207,6 +269,16 @@ impl CommandHandler for ChatHandler {
                     );
                 }
             };
+
+            // Accumulate token usage (if available)
+            if let Some(ref usage) = response.usage {
+                total_prompt_tokens += usage.prompt_tokens;
+                total_completion_tokens += usage.completion_tokens;
+                debug!(
+                    "Accumulated usage: {} prompt + {} completion tokens",
+                    total_prompt_tokens, total_completion_tokens
+                );
+            }
 
             // Check if response has tool calls (must be non-empty)
             if let Some(tool_calls) = response.tool_calls {
@@ -276,7 +348,47 @@ impl CommandHandler for ChatHandler {
             }  // close if let Some(tool_calls)
 
             // No tool calls (or empty array) - this is the final response
-            let final_response = self.finalize_response(conversation_id, response.content).await?;
+            let mut final_response = self.finalize_response(conversation_id, response.content).await?;
+
+            // Deduct credits if payments enabled
+            if let Some(ref credit_store) = self.credit_store {
+                let token_usage = TokenUsage::new(total_prompt_tokens, total_completion_tokens);
+                let credits_used = calculate_credits(&token_usage, &self.pricing_config);
+
+                // Create usage record
+                let usage_record = UsageRecord::new(
+                    user_id.to_string(),
+                    conversation_id.to_string(),
+                    total_prompt_tokens,
+                    total_completion_tokens,
+                    credits_used,
+                );
+
+                // Deduct credits (if this fails, still return response - better UX)
+                match credit_store.deduct_credits(user_id, credits_used, usage_record).await {
+                    Ok(new_balance) => {
+                        // Append cost info to response
+                        let cost_info = format!(
+                            "\n\n_Cost: {} ({} tokens) | Balance: {}_",
+                            Self::format_credits(credits_used),
+                            total_prompt_tokens + total_completion_tokens,
+                            Self::format_credits(new_balance.credits_remaining)
+                        );
+                        final_response.push_str(&cost_info);
+                        info!(
+                            "Charged {} credits ({} tokens) to {}, remaining: {}",
+                            credits_used,
+                            total_prompt_tokens + total_completion_tokens,
+                            &user_id[..user_id.len().min(8)],
+                            new_balance.credits_remaining
+                        );
+                    }
+                    Err(e) => {
+                        // Log but don't fail the response
+                        error!("Failed to deduct credits for {}: {}", user_id, e);
+                    }
+                }
+            }
 
             info!(
                 "Response to {}: {} chars",

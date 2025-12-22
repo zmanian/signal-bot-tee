@@ -1,0 +1,66 @@
+[package]
+name = "x402-payments"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "x402 payment integration for signal-bot-tee"
+
+[dependencies]
+# Async runtime
+tokio = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+
+# HTTP server
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Time
+chrono = { workspace = true }
+humantime-serde = { workspace = true }
+
+# UUID
+uuid = { version = "1.7", features = ["v4", "serde"] }
+
+# Crypto/Security
+sha2 = { workspace = true }
+hex = { workspace = true }
+base64 = { workspace = true }
+secrecy = { workspace = true }
+aes-gcm = "0.10"
+rand = "0.8"
+
+# TEE integration
+dstack-client = { path = "../dstack-client" }
+
+# x402 protocol (EVM)
+# Note: Add when implementing Base chain
+# x402-rs = "0.10"
+# x402-axum = "0.1"
+
+# Solana
+# Note: Add when implementing Solana chain
+# x402-sdk-solana-rust = "0.1"
+
+# NEAR
+# Note: Add when implementing NEAR chain
+# near-jsonrpc-client = "0.8"
+
+[dev-dependencies]
+tokio-test = { workspace = true }
+mockall = { workspace = true }
+tempfile = "3.10"

@@ -14,6 +14,7 @@ use tokio_stream::StreamExt;
 use tools::{ToolRegistry, builtin::{CalculatorTool, WeatherTool, WebSearchTool}};
 use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use x402_payments::CreditStore;
 
 /// Create and configure tool registry based on config.
 fn create_tool_registry(config: &signal_bot::config::ToolsConfig) -> ToolRegistry {
@@ -90,6 +91,43 @@ async fn main() -> AppResult<()> {
     // Create tool registry based on config
     let tool_registry = Arc::new(create_tool_registry(&config.tools));
 
+    // Initialize payment system
+    let credit_store = if config.payments.enabled {
+        info!("Initializing payment system...");
+
+        // Create separate DstackClient instances for payment system
+        let payment_dstack = DstackClient::new(&config.dstack.socket_path);
+        let server_dstack = DstackClient::new(&config.dstack.socket_path);
+
+        let store = CreditStore::new(
+            payment_dstack,
+            config.payments.storage_path.clone(),
+        )
+        .await
+        .context("Failed to initialize credit store")?;
+
+        // Spawn payment HTTP server
+        if let Some(handle) = x402_payments::spawn_payment_server(
+            config.payments.clone(),
+            server_dstack,
+        )
+        .await
+        .context("Failed to start payment server")? {
+            info!("Payment server started on port {}", config.payments.server_port);
+            // Store handle to keep server running (we don't await it)
+            tokio::spawn(async move {
+                if let Err(e) = handle.await {
+                    error!("Payment server error: {:?}", e);
+                }
+            });
+        }
+
+        Some(store)
+    } else {
+        info!("Payments disabled");
+        None
+    };
+
     // Health checks
     if near_ai.health_check().await {
         info!("NEAR AI healthy - Model: {}", config.near_ai.model);
@@ -120,7 +158,19 @@ async fn main() -> AppResult<()> {
     info!("Signal API healthy");
 
     // Create command handlers
-    let handlers: Vec<Box<dyn CommandHandler>> = vec![
+    // Create ChatHandler with or without payment integration
+    let chat_handler: Box<dyn CommandHandler> = if let Some(ref store) = credit_store {
+        Box::new(ChatHandler::with_payments(
+            near_ai.clone(),
+            conversations.clone(),
+            signal.clone(),
+            tool_registry.clone(),
+            config.bot.system_prompt.clone(),
+            config.tools.max_tool_calls,
+            store.clone(),
+            config.payments.pricing.clone(),
+        ))
+    } else {
         Box::new(ChatHandler::new(
             near_ai.clone(),
             conversations.clone(),
@@ -128,12 +178,23 @@ async fn main() -> AppResult<()> {
             tool_registry.clone(),
             config.bot.system_prompt.clone(),
             config.tools.max_tool_calls,
-        )),
+        ))
+    };
+
+    let mut handlers: Vec<Box<dyn CommandHandler>> = vec![
+        chat_handler,
         Box::new(VerifyHandler::new(dstack.clone())),
         Box::new(ClearHandler::new(conversations.clone())),
         Box::new(HelpHandler::new()),
         Box::new(ModelsHandler::new(near_ai.clone())),
     ];
+
+    // Add payment handlers if enabled
+    if let Some(ref store) = credit_store {
+        handlers.push(Box::new(BalanceHandler::new(store.clone())));
+        handlers.push(Box::new(DepositHandler::new(config.payments.clone())));
+        info!("Payment commands enabled: !balance, !deposit");
+    }
 
     info!("Registered {} command handlers", handlers.len());
     info!("NEAR AI endpoint: {}", config.near_ai.base_url);

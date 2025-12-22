@@ -205,4 +205,6 @@ pub struct ChatResponseWithTools {
     pub content: Option<String>,
     pub tool_calls: Option<Vec<ToolCall>>,
     pub finish_reason: String,
+    /// Token usage for this request (prompt + completion tokens).
+    pub usage: Option<Usage>,
 }
