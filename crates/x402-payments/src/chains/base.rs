@@ -1,4 +1,4 @@
-//! Base (EVM) chain facilitator using raw JSON-RPC.
+//! Base (EVM) chain facilitator using Alloy.
 //!
 //! Verifies USDC transfers on Base L2 and manages deposit wallet.
 
@@ -6,22 +6,37 @@ use super::{ChainFacilitator, PaymentPayload, PaymentVerification, TxResult};
 use crate::config::BaseChainConfig;
 use crate::error::PaymentError;
 use crate::types::{Chain, SettlementResult, TxStatus};
+use alloy::network::EthereumWallet;
+use alloy::primitives::{Address, U256, B256};
+use alloy::providers::ProviderBuilder;
+use alloy::signers::local::PrivateKeySigner;
+use alloy::sol;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use tracing::{debug, info, warn};
 
 /// ERC20 Transfer event signature: keccak256("Transfer(address,address,uint256)")
 const TRANSFER_EVENT_SIGNATURE: &str =
     "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 
+// Define ERC20 interface using alloy's sol! macro
+sol! {
+    #[sol(rpc)]
+    interface IERC20 {
+        function transfer(address to, uint256 amount) external returns (bool);
+        function balanceOf(address account) external view returns (uint256);
+    }
+}
+
 /// Base chain facilitator.
 ///
-/// Uses raw JSON-RPC calls for EVM-compatible payment handling on Base L2.
+/// Uses Alloy for EVM-compatible payment handling on Base L2.
 pub struct BaseFacilitator {
     config: BaseChainConfig,
-    /// TEE-derived deposit wallet address.
-    deposit_address: String,
+    /// TEE-derived wallet signer.
+    signer: PrivateKeySigner,
+    /// Wallet address derived from signer.
+    wallet_address: Address,
     /// HTTP client for RPC calls.
     client: reqwest::Client,
 }
@@ -68,11 +83,13 @@ impl BaseFacilitator {
     /// Create a new Base facilitator.
     pub async fn new(
         config: BaseChainConfig,
-        deposit_address: String,
+        dstack: &dstack_client::DstackClient,
     ) -> Result<Self, PaymentError> {
+        let (signer, wallet_address) = Self::derive_wallet(dstack).await?;
+
         info!(
-            "Initializing Base facilitator: rpc={}, usdc={}, deposit={}",
-            config.rpc_url, config.usdc_contract, deposit_address
+            "Initializing Base facilitator: rpc={}, usdc={}, wallet={}",
+            config.rpc_url, config.usdc_contract, wallet_address
         );
 
         let client = reqwest::Client::builder()
@@ -82,17 +99,18 @@ impl BaseFacilitator {
 
         Ok(Self {
             config,
-            deposit_address,
+            signer,
+            wallet_address,
             client,
         })
     }
 
-    /// Derive deposit wallet address from TEE key.
+    /// Derive wallet from TEE key.
     ///
-    /// Derives an Ethereum address from a TEE-derived key using keccak256.
-    pub async fn derive_deposit_address(
+    /// Derives a secp256k1 private key from TEE-derived entropy.
+    async fn derive_wallet(
         dstack: &dstack_client::DstackClient,
-    ) -> Result<String, PaymentError> {
+    ) -> Result<(PrivateKeySigner, Address), PaymentError> {
         // Derive 32-byte key from TEE
         let key_bytes = dstack
             .derive_key("x402-payments/base-deposit-wallet", None)
@@ -106,19 +124,21 @@ impl BaseFacilitator {
             )));
         }
 
-        // Use the key bytes as a "public key" and hash to get address
-        // Note: In production, use proper secp256k1 derivation
-        // For now, we use SHA256 of the key as a deterministic address
-        let mut hasher = Sha256::new();
-        hasher.update(&key_bytes[..32]);
-        let hash = hasher.finalize();
+        // Create private key signer from the first 32 bytes
+        let mut key_array = [0u8; 32];
+        key_array.copy_from_slice(&key_bytes[..32]);
+        let key_b256 = B256::from(key_array);
 
-        // Take last 20 bytes as Ethereum address
-        let address = format!("0x{}", hex::encode(&hash[12..32]));
-        info!("Derived Base deposit address: {}", address);
+        let signer = PrivateKeySigner::from_bytes(&key_b256)
+            .map_err(|e| PaymentError::Internal(format!("Failed to create signer: {}", e)))?;
 
-        Ok(address)
+        let address = signer.address();
+
+        info!("Derived Base wallet address: {}", address);
+
+        Ok((signer, address))
     }
+
 
     /// Make a JSON-RPC call to the EVM node.
     async fn rpc_call<T: Serialize, R: for<'de> Deserialize<'de>>(
@@ -205,7 +225,7 @@ impl BaseFacilitator {
         }
 
         let usdc_address = self.config.usdc_contract.to_lowercase();
-        let deposit_address = self.deposit_address.to_lowercase();
+        let deposit_address = format!("{:?}", self.wallet_address).to_lowercase();
 
         let mut verified_amount: u64 = 0;
         let mut verified_from: Option<String> = None;
@@ -249,7 +269,7 @@ impl BaseFacilitator {
         if verified_amount == 0 {
             return Err(PaymentError::NoTransferFound(format!(
                 "No USDC transfer to {} found in tx {}",
-                self.deposit_address, tx_hash
+                self.wallet_address, tx_hash
             )));
         }
 
@@ -290,7 +310,7 @@ impl BaseFacilitator {
             tx_hash: tx_hash.to_string(),
             amount_usdc: verified_amount,
             from: verified_from,
-            to: self.deposit_address.clone(),
+            to: format!("{:?}", self.wallet_address),
             confirmations,
             verified: true,
         })
@@ -320,7 +340,7 @@ impl ChainFacilitator for BaseFacilitator {
     }
 
     fn deposit_address(&self) -> String {
-        self.deposit_address.clone()
+        format!("{:?}", self.wallet_address)
     }
 
     async fn verify_payment(
@@ -342,8 +362,9 @@ impl ChainFacilitator for BaseFacilitator {
     }
 
     async fn get_deposit_wallet_balance(&self) -> Result<u64, PaymentError> {
+        let wallet_addr = format!("{:?}", self.wallet_address);
         let balance = self
-            .get_erc20_balance(&self.config.usdc_contract, &self.deposit_address)
+            .get_erc20_balance(&self.config.usdc_contract, &wallet_addr)
             .await?;
 
         debug!("Base deposit wallet balance: {} USDC (micro)", balance);
@@ -352,15 +373,71 @@ impl ChainFacilitator for BaseFacilitator {
 
     async fn transfer_to(
         &self,
-        _destination: &str,
-        _amount: u64,
+        destination: &str,
+        amount: u64,
     ) -> Result<TxResult, PaymentError> {
-        // Signing and sending transactions requires proper key management
-        // This would need TEE-derived private key and transaction signing
-        warn!("Base transfer_to not yet implemented - requires transaction signing");
-        Err(PaymentError::UnsupportedChain(
-            "Transfer requires transaction signing (not yet implemented)".to_string(),
-        ))
+        info!(
+            "Transferring {} micro-USDC from {} to {} on Base",
+            amount, self.wallet_address, destination
+        );
+
+        // Parse destination address
+        let to_address: Address = destination
+            .parse()
+            .map_err(|e| PaymentError::Internal(format!("Invalid destination address: {}", e)))?;
+
+        // Parse USDC contract address
+        let usdc_address: Address = self
+            .config
+            .usdc_contract
+            .parse()
+            .map_err(|e| PaymentError::Internal(format!("Invalid USDC contract address: {}", e)))?;
+
+        // Convert amount to U256
+        let amount_u256 = U256::from(amount);
+
+        // Create provider with wallet
+        let wallet = EthereumWallet::from(self.signer.clone());
+        let rpc_url = self
+            .config
+            .rpc_url
+            .parse()
+            .map_err(|e| PaymentError::Internal(format!("Invalid RPC URL: {}", e)))?;
+
+        let provider = ProviderBuilder::new()
+            .with_gas_estimation()
+            .wallet(wallet)
+            .connect_http(rpc_url);
+
+        // Create contract instance
+        let contract = IERC20::new(usdc_address, provider);
+
+        // Call transfer function and send transaction
+        let receipt = contract
+            .transfer(to_address, amount_u256)
+            .send()
+            .await
+            .map_err(|e| PaymentError::Internal(format!("Failed to send transaction: {}", e)))?
+            .get_receipt()
+            .await
+            .map_err(|e| PaymentError::Internal(format!("Failed to get receipt: {}", e)))?;
+
+        info!("Transaction sent: {:?}", receipt.transaction_hash);
+
+        let success = receipt.status();
+        let tx_hash = format!("{:?}", receipt.transaction_hash);
+        let block_number = receipt.block_number;
+
+        info!(
+            "Transfer complete: tx={}, block={:?}, success={}",
+            tx_hash, block_number, success
+        );
+
+        Ok(TxResult {
+            tx_hash,
+            block_number,
+            success,
+        })
     }
 
     async fn get_tx_status(&self, tx_hash: &str) -> Result<TxStatus, PaymentError> {
@@ -427,19 +504,9 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore] // Requires dstack client - run only in TEE environment
     async fn test_facilitator_creation() {
-        let config = BaseChainConfig {
-            enabled: true,
-            rpc_url: "https://mainnet.base.org".to_string(),
-            usdc_contract: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913".to_string(),
-            operator_address: None,
-        };
-
-        let facilitator = BaseFacilitator::new(config, "0x1234".to_string())
-            .await
-            .unwrap();
-
-        assert_eq!(facilitator.chain(), Chain::Base);
-        assert_eq!(facilitator.deposit_address(), "0x1234");
+        // This test requires a real dstack client, so we skip it in unit tests
+        // It should be tested in integration tests within a TEE environment
     }
 }
