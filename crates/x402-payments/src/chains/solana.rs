@@ -17,9 +17,12 @@ use solana_sdk::{
     commitment_config::CommitmentConfig,
     pubkey::Pubkey,
     signature::{Keypair, Signer},
+    signer::SeedDerivable,
     transaction::Transaction,
 };
-use spl_associated_token_account::get_associated_token_address;
+use spl_associated_token_account::{
+    get_associated_token_address, instruction::create_associated_token_account,
+};
 use spl_token::instruction::transfer_checked;
 
 /// Solana chain facilitator.
@@ -120,20 +123,6 @@ mod rpc_types {
         pub ui_amount: Option<f64>,
     }
 
-    /// Token account balance response.
-    #[derive(Debug, Deserialize)]
-    pub struct TokenAccountBalance {
-        pub value: TokenBalanceValue,
-    }
-
-    #[derive(Debug, Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    pub struct TokenBalanceValue {
-        pub amount: String,
-        pub decimals: u8,
-        pub ui_amount: Option<f64>,
-    }
-
     /// Slot info for health check.
     #[derive(Debug, Deserialize)]
     pub struct SlotInfo {
@@ -216,11 +205,8 @@ impl SolanaFacilitator {
         hasher.update(&key_bytes[..32]);
         let seed = hasher.finalize();
 
-        // Create keypair from seed (32 bytes)
-        let mut seed_bytes = [0u8; 64]; // Keypair expects 64 bytes (32 secret + 32 public)
-        seed_bytes[..32].copy_from_slice(&seed[..32]);
-
-        let keypair = Keypair::try_from(&seed_bytes[..])
+        // Create keypair from 32-byte seed using SeedDerivable trait
+        let keypair = Keypair::from_seed(seed.as_slice())
             .map_err(|e| PaymentError::Internal(format!("Failed to create Solana keypair: {}", e)))?;
 
         let pubkey = keypair.pubkey();
@@ -275,20 +261,6 @@ impl SolanaFacilitator {
         ]);
 
         self.rpc_call("getTransaction", params).await
-    }
-
-    /// Get token account balance (SPL token).
-    #[allow(dead_code)] // Will be used when ATA derivation is implemented
-    async fn get_token_account_balance(&self, token_account: &str) -> Result<u64, PaymentError> {
-        let params = serde_json::json!([token_account]);
-
-        let result: TokenAccountBalance = self.rpc_call("getTokenAccountBalance", params).await?;
-
-        result
-            .value
-            .amount
-            .parse::<u64>()
-            .map_err(|e| PaymentError::Internal(format!("Invalid balance format: {}", e)))
     }
 
     /// Get signature statuses.
@@ -511,6 +483,25 @@ impl ChainFacilitator for SolanaFacilitator {
             source_ata, dest_ata
         );
 
+        // Check if destination ATA exists, create if not
+        let mut instructions = Vec::new();
+        match self.rpc_client.get_account(&dest_ata) {
+            Err(_) => {
+                // ATA doesn't exist, create it
+                debug!("Destination ATA {} does not exist, creating it", dest_ata);
+                let create_ata_ix = create_associated_token_account(
+                    &self.wallet_pubkey,  // payer
+                    &destination_pubkey,  // wallet owner
+                    &usdc_mint,           // mint
+                    &spl_token::id(),     // token program
+                );
+                instructions.push(create_ata_ix);
+            }
+            Ok(_) => {
+                debug!("Destination ATA {} already exists", dest_ata);
+            }
+        }
+
         // Create transfer_checked instruction (USDC has 6 decimals)
         let transfer_ix = transfer_checked(
             &spl_token::id(),
@@ -523,6 +514,7 @@ impl ChainFacilitator for SolanaFacilitator {
             6, // USDC decimals
         )
         .map_err(|e| PaymentError::Internal(format!("Failed to create transfer instruction: {}", e)))?;
+        instructions.push(transfer_ix);
 
         // Get recent blockhash
         let recent_blockhash = self
@@ -532,7 +524,7 @@ impl ChainFacilitator for SolanaFacilitator {
 
         // Create and sign transaction
         let transaction = Transaction::new_signed_with_payer(
-            &[transfer_ix],
+            &instructions,
             Some(&self.wallet_pubkey),
             &[&self.wallet_keypair],
             recent_blockhash,
