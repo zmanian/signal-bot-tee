@@ -1,0 +1,85 @@
+[package]
+name = "x402-payments"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "x402 payment integration for signal-bot-tee"
+
+[dependencies]
+# Async runtime
+tokio = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+
+# HTTP server
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Time
+chrono = { workspace = true }
+humantime-serde = { workspace = true }
+
+# UUID
+uuid = { version = "1.7", features = ["v4", "serde"] }
+
+# Crypto/Security
+sha2 = { workspace = true }
+hex = { workspace = true }
+base64 = { workspace = true }
+secrecy = { workspace = true }
+aes-gcm = "0.10"
+rand = "0.8"
+
+# TEE integration
+dstack-client = { path = "../dstack-client" }
+
+# EVM / HTTP client for Base chain RPC
+reqwest = { version = "0.11", features = ["json"] }
+
+# Base58 encoding for Solana addresses
+bs58 = "0.5"
+
+# EVM/Base chain support via Alloy
+alloy = { version = "1.1", features = [
+    "contract",
+    "network",
+    "provider-http",
+    "rpc-types",
+    "signer-local",
+    "sol-types",
+] }
+
+# Force compatible elliptic-curve version for alloy
+elliptic-curve = "0.13.8"
+
+# NEAR Protocol
+near-crypto = "0.28"
+near-primitives = "0.28"
+near-jsonrpc-client = "0.15"
+near-jsonrpc-primitives = "0.28"
+ed25519-dalek = "2.2"  # For direct keypair creation from bytes
+
+# Solana - using latest compatible versions
+solana-sdk = "2.2"
+solana-client = "2.2"
+spl-token = "7.0"
+spl-associated-token-account = "6.0"
+
+[dev-dependencies]
+tokio-test = { workspace = true }
+mockall = { workspace = true }
+tempfile = "3.10"

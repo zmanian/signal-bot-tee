@@ -8,6 +8,7 @@ use std::path::Path;
 use tracing::{debug, instrument, warn};
 
 /// Client for Dstack guest agent.
+#[derive(Clone, Debug)]
 pub struct DstackClient {
     socket_path: String,
 }

@@ -34,10 +34,15 @@ Just send a message to chat with AI.
 - !verify <challenge> - Get TEE attestation with your challenge
 - !clear - Clear conversation history
 - !models - List available AI models
+- !balance - Check your credit balance
+- !deposit - Get deposit addresses for USDC
 - !help - Show this message
 
 **Verification:**
 Use `!verify my-random-text` to get cryptographic proof this bot runs in a TEE. Your challenge is embedded in the TDX quote, proving the attestation was generated fresh for you.
+
+**Payments:**
+This bot uses prepaid credits. Deposit USDC on Base, NEAR, or Solana to add credits. Use `!balance` to check your balance and `!deposit` for deposit addresses.
 
 **Privacy:**
 Your messages are end-to-end encrypted via Signal, processed in a verified TEE (Intel TDX), and sent to NEAR AI Cloud's private inference (NVIDIA GPU TEE).

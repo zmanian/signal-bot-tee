@@ -29,6 +29,10 @@ pub struct Config {
     /// Tools configuration
     #[serde(default)]
     pub tools: ToolsConfig,
+
+    /// Payment configuration
+    #[serde(default)]
+    pub payments: x402_payments::PaymentConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -14,6 +14,7 @@ conversation-store = { path = "../conversation-store" }
 dstack-client = { path = "../dstack-client" }
 signal-client = { path = "../signal-client" }
 tools = { path = "../tools" }
+x402-payments = { path = "../x402-payments" }
 
 # Workspace dependencies
 tokio.workspace = true
@@ -35,3 +36,4 @@ hex.workspace = true
 [dev-dependencies]
 tokio-test.workspace = true
 mockall.workspace = true
+wiremock.workspace = true

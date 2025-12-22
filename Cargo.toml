@@ -8,6 +8,7 @@ members = [
     "crates/signal-client",
     "crates/signal-registration-proxy",
     "crates/tools",
+    "crates/x402-payments",
 ]
 
 [workspace.package]

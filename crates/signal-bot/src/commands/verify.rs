@@ -10,13 +10,44 @@ use tracing::info;
 use sha2::{Sha256, Digest};
 use hex;
 
+/// Operator addresses for fund sweeping (from payment config).
+#[derive(Debug, Clone, Default)]
+pub struct OperatorAddresses {
+    /// Base (EVM) operator address.
+    pub base: Option<String>,
+    /// NEAR operator account.
+    pub near: Option<String>,
+    /// Solana operator address.
+    pub solana: Option<String>,
+}
+
+impl OperatorAddresses {
+    /// Check if any operator address is configured.
+    pub fn has_any(&self) -> bool {
+        self.base.is_some() || self.near.is_some() || self.solana.is_some()
+    }
+}
+
 pub struct VerifyHandler {
     dstack: Arc<DstackClient>,
+    /// Optional operator addresses to display.
+    operator_addresses: Option<OperatorAddresses>,
 }
 
 impl VerifyHandler {
     pub fn new(dstack: Arc<DstackClient>) -> Self {
-        Self { dstack }
+        Self {
+            dstack,
+            operator_addresses: None,
+        }
+    }
+
+    /// Create handler with operator addresses to display.
+    pub fn with_operator_addresses(dstack: Arc<DstackClient>, addresses: OperatorAddresses) -> Self {
+        Self {
+            dstack,
+            operator_addresses: Some(addresses),
+        }
     }
 
     /// Parse the challenge nonce from the message text.
@@ -100,6 +131,7 @@ impl VerifyHandler {
             report_data_hex: Some(report_data_hex),
             was_hashed,
             error: None,
+            operator_addresses: self.operator_addresses.clone(),
         }
     }
 
@@ -189,6 +221,26 @@ impl VerifyHandler {
             lines.push(format!("**Quote Error:** {}", err));
         }
 
+        // Operator addresses for fund sweeping
+        if let Some(ref addresses) = result.operator_addresses {
+            if addresses.has_any() {
+                lines.push(String::new());
+                lines.push("**Operator Fund Addresses:**".into());
+                if let Some(ref addr) = addresses.base {
+                    lines.push(format!("- Base: `{}`", addr));
+                }
+                if let Some(ref addr) = addresses.near {
+                    lines.push(format!("- NEAR: `{}`", addr));
+                }
+                if let Some(ref addr) = addresses.solana {
+                    lines.push(format!("- Solana: `{}`", addr));
+                }
+                lines.push(String::new());
+                lines.push("_Deposits are automatically swept to these addresses._".into());
+                lines.push("_Verify these match the expected operator by checking the compose hash._".into());
+            }
+        }
+
         lines.push(String::new());
         lines.push("**NEAR AI:** Verify separately at https://docs.near.ai/cloud/verification/".into());
 
@@ -206,6 +258,7 @@ struct AttestationResult {
     report_data_hex: Option<String>,
     was_hashed: bool,
     error: Option<String>,
+    operator_addresses: Option<OperatorAddresses>,
 }
 
 #[async_trait]
@@ -235,6 +288,7 @@ mod tests {
     fn create_test_handler() -> VerifyHandler {
         VerifyHandler {
             dstack: Arc::new(DstackClient::new("/fake")),
+            operator_addresses: None,
         }
     }
 
@@ -292,6 +346,7 @@ mod tests {
             report_data_hex: Some(expected_hex.clone()),
             was_hashed: false,
             error: None,
+            ..Default::default()
         };
 
         let response = handler.format_response(result);
@@ -321,6 +376,7 @@ mod tests {
             report_data_hex: Some(expected_hex.clone()),
             was_hashed: true,
             error: None,
+            ..Default::default()
         };
 
         let response = handler.format_response(result);
@@ -344,6 +400,7 @@ mod tests {
             report_data_hex: Some(report_data_hex.clone()),
             was_hashed: false,
             error: None,
+            ..Default::default()
         };
 
         let response = handler.format_response(result);
@@ -384,6 +441,7 @@ mod tests {
             report_data_hex: Some(hex::encode("test".as_bytes())),
             was_hashed: false,
             error: None,
+            ..Default::default()
         };
 
         let response = handler.format_response(result);
@@ -394,5 +452,35 @@ mod tests {
         assert!(response.contains("https://proof.t16z.com"));
         assert!(response.contains("https://github.com/zmanian/signal-bot-tee"));
         assert!(response.contains("xxd -p"));
+    }
+
+    #[test]
+    fn test_operator_addresses_displayed() {
+        let handler = VerifyHandler {
+            dstack: Arc::new(DstackClient::new("/fake")),
+            operator_addresses: Some(OperatorAddresses {
+                base: Some("0xABC123".into()),
+                near: Some("operator.near".into()),
+                solana: None,
+            }),
+        };
+
+        let result = AttestationResult {
+            in_tee: true,
+            compose_hash: Some("abc123".into()),
+            quote: Some("base64quote".into()),
+            operator_addresses: Some(OperatorAddresses {
+                base: Some("0xABC123".into()),
+                near: Some("operator.near".into()),
+                solana: None,
+            }),
+            ..Default::default()
+        };
+
+        let response = handler.format_response(result);
+        assert!(response.contains("Operator Fund Addresses"));
+        assert!(response.contains("0xABC123"));
+        assert!(response.contains("operator.near"));
+        assert!(response.contains("swept to these addresses"));
     }
 }
