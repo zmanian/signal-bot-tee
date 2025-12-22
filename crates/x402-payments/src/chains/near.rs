@@ -8,17 +8,32 @@ use crate::error::PaymentError;
 use crate::types::{Chain, SettlementResult, TxStatus};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use tracing::{debug, info, warn};
+
+// NEAR crypto for ed25519 signing
+use near_crypto::{InMemorySigner, KeyType, SecretKey};
+// NEAR primitives for transaction types
+use near_primitives::{
+    transaction::{Action, FunctionCallAction, SignedTransaction, Transaction, TransactionV0},
+    types::{AccountId, BlockReference, Finality},
+    views::AccessKeyView,
+};
+// NEAR JSON-RPC client
+use near_jsonrpc_client::{methods, JsonRpcClient};
+use near_jsonrpc_primitives::types::query::QueryResponseKind;
 
 /// NEAR chain facilitator.
 ///
 /// Verifies USDC (NEP-141) transfers via NEAR JSON-RPC.
 pub struct NearFacilitator {
     config: NearChainConfig,
-    /// TEE-derived deposit account.
-    deposit_account: String,
-    /// HTTP client for RPC calls.
+    /// TEE-derived wallet signer
+    signer: InMemorySigner,
+    /// Deposit account ID (implicit account from public key)
+    deposit_account: AccountId,
+    /// JSON-RPC client
+    rpc_client: JsonRpcClient,
+    /// HTTP client for legacy RPC calls
     client: reqwest::Client,
 }
 
@@ -127,16 +142,23 @@ mod rpc_types {
 use rpc_types::*;
 
 impl NearFacilitator {
-    /// Create a new NEAR facilitator.
+    /// Create a new NEAR facilitator with TEE-derived wallet.
     pub async fn new(
         config: NearChainConfig,
-        deposit_account: String,
+        dstack: &dstack_client::DstackClient,
     ) -> Result<Self, PaymentError> {
+        // Derive wallet from TEE
+        let (signer, deposit_account) = Self::derive_wallet(dstack).await?;
+
         info!(
             "Initializing NEAR facilitator: rpc={}, usdc={}, deposit={}",
             config.rpc_url, config.usdc_contract, deposit_account
         );
 
+        // Create JSON-RPC client
+        let rpc_client = JsonRpcClient::connect(&config.rpc_url);
+
+        // Create HTTP client for legacy RPC calls
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
             .build()
@@ -144,17 +166,19 @@ impl NearFacilitator {
 
         Ok(Self {
             config,
+            signer,
             deposit_account,
+            rpc_client,
             client,
         })
     }
 
-    /// Derive deposit account from TEE key.
+    /// Derive wallet (signer + account) from TEE key.
     ///
     /// NEAR uses implicit accounts (64-char hex of ed25519 pubkey).
-    pub async fn derive_deposit_account(
+    pub async fn derive_wallet(
         dstack: &dstack_client::DstackClient,
-    ) -> Result<String, PaymentError> {
+    ) -> Result<(InMemorySigner, AccountId), PaymentError> {
         // Derive 32-byte key from TEE
         let key_bytes = dstack
             .derive_key("x402-payments/near-deposit-wallet", None)
@@ -168,16 +192,24 @@ impl NearFacilitator {
             )));
         }
 
-        // Hash to get a deterministic 32-byte public key representation
-        let mut hasher = Sha256::new();
-        hasher.update(&key_bytes[..32]);
-        let hash = hasher.finalize();
+        // Use first 32 bytes as ed25519 secret key
+        let secret_key = SecretKey::from_seed(KeyType::ED25519, &hex::encode(&key_bytes[..32]));
 
-        // NEAR implicit account = 64 hex chars of the public key
-        let account_id = hex::encode(hash);
+        // Get public key
+        let public_key = secret_key.public_key();
+
+        // NEAR implicit account = 64 hex chars of the public key bytes
+        let account_id_str = hex::encode(public_key.unwrap_as_ed25519().0);
+        let account_id: AccountId = account_id_str
+            .parse()
+            .map_err(|e| PaymentError::Internal(format!("Invalid account ID: {}", e)))?;
+
+        // Create signer
+        let signer = InMemorySigner::from_secret_key(account_id.clone(), secret_key);
+
         info!("Derived NEAR implicit account: {}", account_id);
 
-        Ok(account_id)
+        Ok((signer, account_id))
     }
 
     /// Make a JSON-RPC call to NEAR.
@@ -224,6 +256,73 @@ impl NearFacilitator {
         });
 
         self.rpc_call("tx", params).await
+    }
+
+    /// Get access key for transaction signing.
+    async fn get_access_key(&self) -> Result<AccessKeyView, PaymentError> {
+        let request = methods::query::RpcQueryRequest {
+            block_reference: BlockReference::Finality(Finality::Final),
+            request: near_primitives::views::QueryRequest::ViewAccessKey {
+                account_id: self.deposit_account.clone(),
+                public_key: self.signer.public_key(),
+            },
+        };
+
+        let response = self
+            .rpc_client
+            .call(request)
+            .await
+            .map_err(|e| PaymentError::RpcError(format!("Failed to get access key: {}", e)))?;
+
+        match response.kind {
+            QueryResponseKind::AccessKey(access_key) => Ok(access_key),
+            _ => Err(PaymentError::RpcError(
+                "Unexpected response type for access key query".to_string(),
+            )),
+        }
+    }
+
+    /// Get latest block for transaction.
+    async fn get_latest_block(&self) -> Result<near_primitives::views::BlockView, PaymentError> {
+        let request = methods::block::RpcBlockRequest {
+            block_reference: BlockReference::Finality(Finality::Final),
+        };
+
+        let response = self
+            .rpc_client
+            .call(request)
+            .await
+            .map_err(|e| PaymentError::RpcError(format!("Failed to get latest block: {}", e)))?;
+
+        Ok(response)
+    }
+
+    /// Broadcast signed transaction and wait for finality.
+    async fn broadcast_tx_commit(&self, signed_tx: SignedTransaction) -> Result<TxResult, PaymentError> {
+        let request = methods::broadcast_tx_commit::RpcBroadcastTxCommitRequest {
+            signed_transaction: signed_tx,
+        };
+
+        let response = self
+            .rpc_client
+            .call(request)
+            .await
+            .map_err(|e| PaymentError::RpcError(format!("Failed to broadcast transaction: {}", e)))?;
+
+        // Check if transaction succeeded
+        let success = match response.status {
+            near_primitives::views::FinalExecutionStatus::SuccessValue(_) => true,
+            near_primitives::views::FinalExecutionStatus::Failure(err) => {
+                return Err(PaymentError::TxFailed(format!("Transaction failed: {:?}", err)));
+            }
+            _ => false,
+        };
+
+        Ok(TxResult {
+            tx_hash: response.transaction.hash.to_string(),
+            block_number: None, // NEAR uses block hash, not number in this response
+            success,
+        })
     }
 
     /// Query ft_balance_of for a NEP-141 token.
@@ -354,7 +453,7 @@ impl NearFacilitator {
             tx_hash: tx_hash.to_string(),
             amount_usdc: amount,
             from: Some(sender.to_string()),
-            to: self.deposit_account.clone(),
+            to: self.deposit_account.to_string(),
             confirmations: 1, // NEAR finality is immediate
             verified: true,
         })
@@ -368,7 +467,7 @@ impl ChainFacilitator for NearFacilitator {
     }
 
     fn deposit_address(&self) -> String {
-        self.deposit_account.clone()
+        self.deposit_account.to_string()
     }
 
     async fn verify_payment(
@@ -400,7 +499,7 @@ impl ChainFacilitator for NearFacilitator {
 
     async fn get_deposit_wallet_balance(&self) -> Result<u64, PaymentError> {
         let balance = self
-            .get_ft_balance(&self.config.usdc_contract, &self.deposit_account)
+            .get_ft_balance(&self.config.usdc_contract, &self.deposit_account.to_string())
             .await?;
 
         debug!("NEAR deposit wallet balance: {} USDC (micro)", balance);
@@ -409,15 +508,73 @@ impl ChainFacilitator for NearFacilitator {
 
     async fn transfer_to(
         &self,
-        _destination: &str,
-        _amount: u64,
+        destination: &str,
+        amount: u64,
     ) -> Result<TxResult, PaymentError> {
-        // Signing and sending transactions requires proper key management
-        // This would need TEE-derived private key and transaction signing
-        warn!("NEAR transfer_to not yet implemented - requires transaction signing");
-        Err(PaymentError::UnsupportedChain(
-            "Transfer requires transaction signing (not yet implemented)".to_string(),
-        ))
+        info!(
+            "Transferring {} USDC from {} to {} on NEAR",
+            amount, self.deposit_account, destination
+        );
+
+        // Parse destination as AccountId
+        let receiver_id: AccountId = destination
+            .parse()
+            .map_err(|e| PaymentError::Internal(format!("Invalid destination account: {}", e)))?;
+
+        // Get current nonce and block hash
+        let access_key = self.get_access_key().await?;
+        let block = self.get_latest_block().await?;
+
+        // Build ft_transfer args
+        let ft_transfer_args = serde_json::json!({
+            "receiver_id": receiver_id.to_string(),
+            "amount": amount.to_string(),
+            "memo": format!("Sweep to operator {}", destination),
+        });
+
+        let args_json = serde_json::to_string(&ft_transfer_args)
+            .map_err(|e| PaymentError::Internal(format!("Failed to serialize args: {}", e)))?;
+
+        // Parse USDC contract as AccountId
+        let usdc_contract: AccountId = self.config.usdc_contract
+            .parse()
+            .map_err(|e| PaymentError::Internal(format!("Invalid USDC contract: {}", e)))?;
+
+        // Create ft_transfer action
+        let action = Action::FunctionCall(Box::new(FunctionCallAction {
+            method_name: "ft_transfer".to_string(),
+            args: args_json.into_bytes(),
+            gas: 30_000_000_000_000, // 30 TGas
+            deposit: 1, // 1 yoctoNEAR (required for NEP-141)
+        }));
+
+        // Build transaction V0
+        let transaction_v0 = TransactionV0 {
+            signer_id: self.deposit_account.clone(),
+            public_key: self.signer.public_key(),
+            nonce: access_key.nonce + 1,
+            receiver_id: usdc_contract.clone(),
+            block_hash: block.header.hash,
+            actions: vec![action],
+        };
+
+        let transaction = Transaction::V0(transaction_v0);
+
+        // Sign transaction
+        let signed_tx = SignedTransaction::new(
+            self.signer.sign(transaction.get_hash_and_size().0.as_ref()),
+            transaction,
+        );
+
+        // Broadcast via broadcast_tx_commit (waits for finality)
+        let tx_result = self.broadcast_tx_commit(signed_tx).await?;
+
+        info!(
+            "NEAR transfer broadcasted: tx_hash={}, success={}",
+            tx_result.tx_hash, tx_result.success
+        );
+
+        Ok(tx_result)
     }
 
     async fn get_tx_status(&self, _tx_hash: &str) -> Result<TxStatus, PaymentError> {
@@ -452,21 +609,7 @@ impl ChainFacilitator for NearFacilitator {
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn test_facilitator_creation() {
-        let config = NearChainConfig {
-            enabled: true,
-            rpc_url: "https://rpc.mainnet.near.org".to_string(),
-            usdc_contract: "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1"
-                .to_string(),
-            operator_account: None,
-        };
-
-        let facilitator = NearFacilitator::new(config, "test.near".to_string())
-            .await
-            .unwrap();
-
-        assert_eq!(facilitator.chain(), Chain::Near);
-        assert_eq!(facilitator.deposit_address(), "test.near");
-    }
+    // TODO: Add tests with mocked DstackClient
+    // The new constructor requires a DstackClient to derive the wallet
+    // which makes testing more complex but more realistic
 }
