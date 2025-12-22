@@ -40,11 +40,12 @@ pub use sweeper::{spawn_sweeper, FundSweeper};
 pub use types::{Chain, CreditBalance, Deposit, DepositStatus, OperatorAddresses, SweepRecord, UsageRecord};
 
 use api::AppState;
+use chains::{BaseFacilitator, ChainFacilitator, NearFacilitator, SolanaFacilitator};
 use dstack_client::DstackClient;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use tracing::info;
+use tracing::{info, warn};
 
 /// Start the payment HTTP server.
 ///
@@ -59,12 +60,98 @@ pub async fn start_payment_server(
         return Ok(());
     }
 
-    // Create credit store
+    // Initialize chain facilitators (before credit store, since they only need &dstack)
+    let base_facilitator = if let Some(base_config) = &config.base {
+        if base_config.enabled {
+            match BaseFacilitator::new(base_config.clone(), &dstack).await {
+                Ok(f) => {
+                    info!("Base facilitator initialized");
+                    Some(Arc::new(f))
+                }
+                Err(e) => {
+                    warn!("Failed to initialize Base facilitator: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let near_facilitator = if let Some(near_config) = &config.near {
+        if near_config.enabled {
+            match NearFacilitator::new(near_config.clone(), &dstack).await {
+                Ok(f) => {
+                    info!("NEAR facilitator initialized");
+                    Some(Arc::new(f))
+                }
+                Err(e) => {
+                    warn!("Failed to initialize NEAR facilitator: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let solana_facilitator = if let Some(solana_config) = &config.solana {
+        if solana_config.enabled {
+            match SolanaFacilitator::new(solana_config.clone(), &dstack).await {
+                Ok(f) => {
+                    info!("Solana facilitator initialized");
+                    Some(Arc::new(f))
+                }
+                Err(e) => {
+                    warn!("Failed to initialize Solana facilitator: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    // Collect enabled facilitators for sweeper
+    let mut facilitators: Vec<Arc<dyn ChainFacilitator>> = Vec::new();
+    if let Some(ref f) = base_facilitator {
+        facilitators.push(f.clone());
+    }
+    if let Some(ref f) = near_facilitator {
+        facilitators.push(f.clone());
+    }
+    if let Some(ref f) = solana_facilitator {
+        facilitators.push(f.clone());
+    }
+
+    // Spawn fund sweeper if we have any operator addresses configured
+    let operator_addresses = config.operator_addresses();
+    if !facilitators.is_empty() && operator_addresses.has_any() {
+        info!("Starting fund sweeper with {} chains", facilitators.len());
+        spawn_sweeper(
+            facilitators,
+            operator_addresses,
+            config.sweep.clone(),
+        );
+    }
+
+    // Create credit store (takes ownership of dstack)
     let credit_store = CreditStore::new(dstack, config.storage_path.clone()).await?;
 
     // Create app state
-    // Note: Chain facilitators should be initialized and passed by the integration layer
-    let state = Arc::new(AppState::new(credit_store, config.clone(), None, None, None));
+    let state = Arc::new(AppState::new(
+        credit_store,
+        config.clone(),
+        base_facilitator,
+        near_facilitator,
+        solana_facilitator,
+    ));
 
     // Create router
     let router = api::create_router(state);
@@ -97,9 +184,97 @@ pub async fn spawn_payment_server(
         return Ok(None);
     }
 
+    // Initialize chain facilitators (before credit store, since they only need &dstack)
+    let base_facilitator = if let Some(base_config) = &config.base {
+        if base_config.enabled {
+            match BaseFacilitator::new(base_config.clone(), &dstack).await {
+                Ok(f) => {
+                    info!("Base facilitator initialized");
+                    Some(Arc::new(f))
+                }
+                Err(e) => {
+                    warn!("Failed to initialize Base facilitator: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let near_facilitator = if let Some(near_config) = &config.near {
+        if near_config.enabled {
+            match NearFacilitator::new(near_config.clone(), &dstack).await {
+                Ok(f) => {
+                    info!("NEAR facilitator initialized");
+                    Some(Arc::new(f))
+                }
+                Err(e) => {
+                    warn!("Failed to initialize NEAR facilitator: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let solana_facilitator = if let Some(solana_config) = &config.solana {
+        if solana_config.enabled {
+            match SolanaFacilitator::new(solana_config.clone(), &dstack).await {
+                Ok(f) => {
+                    info!("Solana facilitator initialized");
+                    Some(Arc::new(f))
+                }
+                Err(e) => {
+                    warn!("Failed to initialize Solana facilitator: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    // Collect enabled facilitators for sweeper
+    let mut facilitators: Vec<Arc<dyn ChainFacilitator>> = Vec::new();
+    if let Some(ref f) = base_facilitator {
+        facilitators.push(f.clone());
+    }
+    if let Some(ref f) = near_facilitator {
+        facilitators.push(f.clone());
+    }
+    if let Some(ref f) = solana_facilitator {
+        facilitators.push(f.clone());
+    }
+
+    // Spawn fund sweeper if we have any operator addresses configured
+    let operator_addresses = config.operator_addresses();
+    if !facilitators.is_empty() && operator_addresses.has_any() {
+        info!("Starting fund sweeper with {} chains", facilitators.len());
+        spawn_sweeper(
+            facilitators,
+            operator_addresses,
+            config.sweep.clone(),
+        );
+    }
+
+    // Create credit store (takes ownership of dstack)
     let credit_store = CreditStore::new(dstack, config.storage_path.clone()).await?;
-    // Note: Chain facilitators should be initialized and passed by the integration layer
-    let state = Arc::new(AppState::new(credit_store, config.clone(), None, None, None));
+
+    let state = Arc::new(AppState::new(
+        credit_store,
+        config.clone(),
+        base_facilitator,
+        near_facilitator,
+        solana_facilitator,
+    ));
     let router = api::create_router(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], config.server_port));
