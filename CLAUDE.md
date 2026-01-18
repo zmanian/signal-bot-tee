@@ -363,6 +363,65 @@ Environment variables for the tool use system:
 | `TOOLS__WEB_SEARCH__API_KEY` | (none) | Brave Search API key |
 | `TOOLS__WEB_SEARCH__MAX_RESULTS` | `5` | Number of search results |
 
+### Payment Configuration (x402)
+
+The bot includes an optional credit/payment tracking system (disabled by default).
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PAYMENTS__ENABLED` | `false` | Master switch for payment system |
+| `PAYMENTS__SERVER_PORT` | `8082` | HTTP port for payment API |
+| `PAYMENTS__STORAGE_PATH` | `/data/credits.enc` | Encrypted credit store path |
+
+#### Enabling Payments
+
+To enable the credit tracking system:
+
+1. **Set the environment variable:**
+   ```yaml
+   # In phala-compose.yaml or .env
+   PAYMENTS__ENABLED=true
+   ```
+
+2. **Configure at least one chain for deposits:**
+   ```bash
+   # Base (EVM)
+   PAYMENTS__BASE__ENABLED=true
+   PAYMENTS__BASE__RPC_URL=https://mainnet.base.org
+   PAYMENTS__BASE__OPERATOR_ADDRESS=0xYourAddress
+
+   # NEAR Protocol
+   PAYMENTS__NEAR__ENABLED=true
+   PAYMENTS__NEAR__RPC_URL=https://rpc.mainnet.near.org
+   PAYMENTS__NEAR__OPERATOR_ACCOUNT=your-account.near
+
+   # Solana
+   PAYMENTS__SOLANA__ENABLED=true
+   PAYMENTS__SOLANA__RPC_URL=https://api.mainnet-beta.solana.com
+   PAYMENTS__SOLANA__OPERATOR_ADDRESS=YourSolanaAddress
+   ```
+
+3. **Deploy the updated configuration:**
+   ```bash
+   cd docker
+   phala deploy --uuid YOUR_CVM_UUID --compose ./phala-compose.yaml
+   ```
+
+When enabled, the bot will:
+- Track user credits in TEE-encrypted storage
+- Require credits for AI messages (deducted per token)
+- Expose `!balance` and `!deposit` commands
+- Run a payment API server on port 8082
+
+#### Pricing Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PAYMENTS__PRICING__PROMPT_CREDITS_PER_MILLION` | `100000` | Credits per 1M prompt tokens ($0.10) |
+| `PAYMENTS__PRICING__COMPLETION_CREDITS_PER_MILLION` | `300000` | Credits per 1M completion tokens ($0.30) |
+| `PAYMENTS__PRICING__MINIMUM_CREDITS_PER_MESSAGE` | `100` | Floor per message ($0.0001) |
+| `PAYMENTS__PRICING__USDC_TO_CREDITS_RATIO` | `1000000` | 1 USDC = 1M credits |
+
 ## Tool Use System
 
 The bot supports LLM tool use (function calling) for enhanced capabilities:

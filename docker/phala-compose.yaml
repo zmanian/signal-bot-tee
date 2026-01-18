@@ -27,7 +27,7 @@ services:
 
   signal-bot:
     # Image hosted on Docker Hub
-    image: zaki1iqlusion/signal-bot-tee:v0.12.0
+    image: zaki1iqlusion/signal-bot-tee:v0.14.0
     container_name: signal-bot
     environment:
       # Signal configuration - polls ALL registered accounts automatically
@@ -41,9 +41,13 @@ services:
       - CONVERSATION__TTL=${CONVERSATION_TTL:-24h}
       # Bot settings - debug for troubleshooting
       - BOT__LOG_LEVEL=debug
+      - BOT__SIGNAL_USERNAME=nearai.54
+      - BOT__GITHUB_REPO=https://github.com/zmanian/signal-bot-tee
       # Tools configuration
       - TOOLS__ENABLED=${TOOLS_ENABLED:-true}
       - TOOLS__WEB_SEARCH__API_KEY=${TOOLS_WEB_SEARCH_API_KEY}
+      # Payment/credit tracking (set to true to enable)
+      - PAYMENTS__ENABLED=false
       # Dstack TEE socket - provided by Phala CVM
       - DSTACK__SOCKET_PATH=/var/run/dstack.sock
     volumes:

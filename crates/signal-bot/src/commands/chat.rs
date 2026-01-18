@@ -24,6 +24,10 @@ pub struct ChatHandler {
     tool_registry: Arc<ToolRegistry>,
     system_prompt: String,
     max_tool_iterations: usize,
+    /// Signal username for identity in system prompt.
+    signal_username: Option<String>,
+    /// GitHub repo URL for identity in system prompt.
+    github_repo: Option<String>,
     /// Optional credit store for payment integration.
     credit_store: Option<Arc<CreditStore>>,
     /// Pricing configuration.
@@ -38,6 +42,8 @@ impl ChatHandler {
         tool_registry: Arc<ToolRegistry>,
         system_prompt: String,
         max_tool_iterations: usize,
+        signal_username: Option<String>,
+        github_repo: Option<String>,
     ) -> Self {
         Self {
             near_ai,
@@ -47,6 +53,8 @@ impl ChatHandler {
             tool_registry,
             system_prompt,
             max_tool_iterations,
+            signal_username,
+            github_repo,
             credit_store: None,
             pricing_config: PricingConfig::default(),
         }
@@ -60,6 +68,8 @@ impl ChatHandler {
         tool_registry: Arc<ToolRegistry>,
         system_prompt: String,
         max_tool_iterations: usize,
+        signal_username: Option<String>,
+        github_repo: Option<String>,
         credit_store: Arc<CreditStore>,
         pricing_config: PricingConfig,
     ) -> Self {
@@ -71,6 +81,8 @@ impl ChatHandler {
             tool_registry,
             system_prompt,
             max_tool_iterations,
+            signal_username,
+            github_repo,
             credit_store: Some(credit_store),
             pricing_config,
         }
@@ -86,13 +98,12 @@ impl ChatHandler {
         }
     }
 
-    /// Build system prompt with current timestamp.
+    /// Build system prompt with identity information and current timestamp.
     fn build_system_prompt(&self) -> String {
-        let now = chrono::Utc::now();
-        format!(
-            "{}\n\nCurrent date and time: {} UTC",
-            self.system_prompt,
-            now.format("%A, %B %d, %Y at %H:%M")
+        crate::config::build_system_prompt_with_identity(
+            &self.system_prompt,
+            self.signal_username.as_deref(),
+            self.github_repo.as_deref(),
         )
     }
 

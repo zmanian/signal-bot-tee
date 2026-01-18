@@ -167,6 +167,8 @@ async fn main() -> AppResult<()> {
             tool_registry.clone(),
             config.bot.system_prompt.clone(),
             config.tools.max_tool_calls,
+            config.bot.signal_username.clone(),
+            config.bot.github_repo.clone(),
             store.clone(),
             config.payments.pricing.clone(),
         ))
@@ -178,6 +180,8 @@ async fn main() -> AppResult<()> {
             tool_registry.clone(),
             config.bot.system_prompt.clone(),
             config.tools.max_tool_calls,
+            config.bot.signal_username.clone(),
+            config.bot.github_repo.clone(),
         ))
     };
 

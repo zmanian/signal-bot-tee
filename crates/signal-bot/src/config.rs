@@ -81,6 +81,14 @@ pub struct BotConfig {
     #[serde(default = "default_system_prompt")]
     pub system_prompt: String,
 
+    /// Signal username (e.g., "nearai.54")
+    #[serde(default)]
+    pub signal_username: Option<String>,
+
+    /// GitHub repository URL
+    #[serde(default)]
+    pub github_repo: Option<String>,
+
     /// Log level
     #[serde(default = "default_log_level")]
     pub log_level: String,
@@ -160,6 +168,8 @@ impl Default for BotConfig {
     fn default() -> Self {
         Self {
             system_prompt: default_system_prompt(),
+            signal_username: None,
+            github_repo: None,
             log_level: default_log_level(),
         }
     }
@@ -260,6 +270,36 @@ You have access to these tools - use them when helpful:
 - For calculations, use the calculate tool rather than mental math
 - If a tool fails, explain what happened and try to help anyway
 - Never fabricate search results or weather data"#.into()
+}
+
+/// Build system prompt with identity information.
+/// This is called at runtime to inject signal_username and github_repo.
+pub fn build_system_prompt_with_identity(
+    base_prompt: &str,
+    signal_username: Option<&str>,
+    github_repo: Option<&str>,
+) -> String {
+    let now = chrono::Utc::now();
+    let mut prompt = base_prompt.to_string();
+
+    // Add identity section if either field is configured
+    if signal_username.is_some() || github_repo.is_some() {
+        prompt.push_str("\n\n## Identity");
+        if let Some(username) = signal_username {
+            prompt.push_str(&format!("\n- Signal username: @{}", username));
+        }
+        if let Some(repo) = github_repo {
+            prompt.push_str(&format!("\n- Source code: {}", repo));
+        }
+    }
+
+    // Add current timestamp
+    prompt.push_str(&format!(
+        "\n\nCurrent date and time: {} UTC",
+        now.format("%A, %B %d, %Y at %H:%M")
+    ));
+
+    prompt
 }
 
 fn default_log_level() -> String {

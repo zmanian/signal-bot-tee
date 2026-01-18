@@ -39,7 +39,7 @@ pub struct PaymentConfig {
 }
 
 fn default_enabled() -> bool {
-    true
+    false
 }
 
 fn default_server_port() -> u16 {
@@ -53,7 +53,7 @@ fn default_storage_path() -> PathBuf {
 impl Default for PaymentConfig {
     fn default() -> Self {
         Self {
-            enabled: true,
+            enabled: false,
             server_port: 8082,
             pricing: PricingConfig::default(),
             storage_path: default_storage_path(),
